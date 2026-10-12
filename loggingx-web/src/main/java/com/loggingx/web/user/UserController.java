@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/user")
+@RequestMapping("/user")
 public class UserController {
 
     private final UserService userService;

@@ -94,8 +94,11 @@ public class RoleService {
         }
     }
 
-    public Set<Long> menuIdsOf(Long id) {
-        return requireRole(id).menuIds();
+    /**
+     * @return ids of the menus and buttons granted to the role, in ascending order
+     */
+    public List<Long> menuIdsOf(Long id) {
+        return requireRole(id).menuIds().stream().sorted().toList();
     }
 
     /**
@@ -103,6 +106,10 @@ public class RoleService {
      */
     public void assignMenus(Long id, Collection<Long> menuIds) {
         Role role = requireRole(id);
+        if (isSuperRole(role)) {
+            // Saving would silently change nothing, since the super role always has every menu.
+            throw new BadRequestException("The super administrator role always has every menu");
+        }
         Set<Long> existingMenuIds = menuRepository.findAll().stream().map(Menu::id).collect(Collectors.toSet());
         Set<Long> granted = menuIds.stream().filter(existingMenuIds::contains).collect(Collectors.toSet());
         roleRepository.update(role.withMenuIds(granted, Instant.now()));
