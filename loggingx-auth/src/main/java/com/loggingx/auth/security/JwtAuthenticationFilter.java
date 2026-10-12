@@ -3,6 +3,8 @@ package com.loggingx.auth.security;
 import com.loggingx.auth.service.JwtTokenService;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
+import com.loggingx.dao.role.Role;
+import com.loggingx.dao.role.RoleRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,19 +17,23 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenService jwtTokenService;
     private final UserAccountRepository userAccountRepository;
+    private final RoleRepository roleRepository;
 
     public JwtAuthenticationFilter(
             JwtTokenService jwtTokenService,
-            UserAccountRepository userAccountRepository
+            UserAccountRepository userAccountRepository,
+            RoleRepository roleRepository
     ) {
         this.jwtTokenService = jwtTokenService;
         this.userAccountRepository = userAccountRepository;
+        this.roleRepository = roleRepository;
     }
 
     @Override
@@ -42,6 +48,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String username = jwtTokenService.parseUsername(token);
                 if (username != null && !username.isBlank()) {
                     userAccountRepository.findByUsername(username)
+                            .filter(account -> !UserAccount.STATUS_DEACTIVATED.equals(account.status()))
                             .map(this::authenticationFor)
                             .ifPresent(authentication -> SecurityContextHolder.getContext().setAuthentication(authentication));
                 }
@@ -51,11 +58,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private UsernamePasswordAuthenticationToken authenticationFor(UserAccount account) {
-        return new UsernamePasswordAuthenticationToken(
-                account.username(),
-                null,
-                List.of(new SimpleGrantedAuthority("ROLE_" + account.role()))
-        );
+        List<SimpleGrantedAuthority> authorities = account.roleIds().stream()
+                .map(roleRepository::findById)
+                .flatMap(Optional::stream)
+                .filter(Role::enabled)
+                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.code()))
+                .toList();
+        return new UsernamePasswordAuthenticationToken(account.username(), null, authorities);
     }
 
     private String resolveBearerToken(HttpServletRequest request) {

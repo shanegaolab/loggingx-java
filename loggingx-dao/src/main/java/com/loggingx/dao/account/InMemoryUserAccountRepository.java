@@ -1,23 +1,31 @@
 package com.loggingx.dao.account;
 
+import com.loggingx.dao.support.AbstractInMemoryRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
-public class InMemoryUserAccountRepository implements UserAccountRepository {
-
-    private final Map<String, UserAccount> accounts = new ConcurrentHashMap<>();
+public class InMemoryUserAccountRepository extends AbstractInMemoryRepository<UserAccount>
+        implements UserAccountRepository {
 
     @Override
     public Optional<UserAccount> findByUsername(String username) {
-        return Optional.ofNullable(accounts.get(username));
+        return findFirst(account -> account.username().equals(username));
     }
 
     @Override
-    public boolean saveIfAbsent(UserAccount account) {
-        return accounts.putIfAbsent(account.username(), account) == null;
+    protected Long idOf(UserAccount account) {
+        return account.id();
+    }
+
+    @Override
+    protected UserAccount withId(UserAccount account, Long id) {
+        return account.withId(id);
+    }
+
+    @Override
+    protected String uniqueKeyOf(UserAccount account) {
+        return account.username();
     }
 }
