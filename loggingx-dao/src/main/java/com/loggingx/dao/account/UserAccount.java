@@ -1,13 +1,44 @@
 package com.loggingx.dao.account;
 
 import java.time.Instant;
-import java.util.UUID;
+import java.util.Set;
 
+/**
+ * @param gender  1 male, 2 female
+ * @param status  1 online, 2 offline, 3 abnormal, 4 deactivated
+ * @param roleIds ids of the roles granted to the user
+ */
 public record UserAccount(
-        UUID id,
+        Long id,
         String username,
         String encodedPassword,
-        String role,
-        Instant createdAt
+        String nickName,
+        String gender,
+        String phone,
+        String email,
+        String avatar,
+        String status,
+        Set<Long> roleIds,
+        Instant createdAt,
+        String createdBy,
+        Instant updatedAt,
+        String updatedBy
 ) {
+
+    public static final String STATUS_ONLINE = "1";
+    public static final String STATUS_DEACTIVATED = "4";
+
+    public UserAccount {
+        roleIds = roleIds == null ? Set.of() : Set.copyOf(roleIds);
+    }
+
+    public UserAccount withId(Long newId) {
+        return new UserAccount(newId, username, encodedPassword, nickName, gender, phone, email, avatar, status,
+                roleIds, createdAt, createdBy, updatedAt, updatedBy);
+    }
+
+    public UserAccount withRoleIds(Set<Long> newRoleIds) {
+        return new UserAccount(id, username, encodedPassword, nickName, gender, phone, email, avatar, status,
+                newRoleIds, createdAt, createdBy, updatedAt, updatedBy);
+    }
 }

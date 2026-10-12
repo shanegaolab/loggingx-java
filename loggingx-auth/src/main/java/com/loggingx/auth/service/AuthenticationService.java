@@ -3,68 +3,89 @@ package com.loggingx.auth.service;
 import com.loggingx.auth.model.AuthToken;
 import com.loggingx.common.exception.ConflictException;
 import com.loggingx.common.exception.UnauthorizedException;
+import com.loggingx.common.util.Usernames;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
+import com.loggingx.dao.role.Role;
+import com.loggingx.dao.role.RoleRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class AuthenticationService {
 
-    private static final String DEFAULT_ROLE = "USER";
+    /** Role granted to self-registered users. */
+    public static final String DEFAULT_ROLE_CODE = "R_USER";
+
+    private static final String TOKEN_TYPE = "Bearer";
+    private static final String INVALID_CREDENTIALS = "Invalid username or password";
 
     private final UserAccountRepository userAccountRepository;
+    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
+    private final String dummyEncodedPassword;
 
     public AuthenticationService(
             UserAccountRepository userAccountRepository,
+            RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenService jwtTokenService
     ) {
         this.userAccountRepository = userAccountRepository;
+        this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
+        this.dummyEncodedPassword = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
     public AuthToken register(String username, String rawPassword) {
-        String normalizedUsername = normalizeUsername(username);
+        String normalizedUsername = Usernames.normalize(username);
+        Set<Long> roleIds = roleRepository.findByCode(DEFAULT_ROLE_CODE).map(Role::id).map(Set::of).orElse(Set.of());
+        Instant now = Instant.now();
 
-        UserAccount account = new UserAccount(
-                UUID.randomUUID(),
+        UserAccount account = userAccountRepository.insert(new UserAccount(
+                null,
                 normalizedUsername,
                 passwordEncoder.encode(rawPassword),
-                DEFAULT_ROLE,
-                Instant.now()
-        );
-        if (!userAccountRepository.saveIfAbsent(account)) {
-            throw new ConflictException("Username is already registered");
-        }
+                normalizedUsername,
+                null,
+                null,
+                null,
+                null,
+                UserAccount.STATUS_ONLINE,
+                roleIds,
+                now,
+                normalizedUsername,
+                now,
+                normalizedUsername
+        )).orElseThrow(() -> new ConflictException("Username is already registered"));
         return issueToken(account);
     }
 
     public AuthToken login(String username, String rawPassword) {
-        UserAccount account = userAccountRepository.findByUsername(normalizeUsername(username))
-                .orElseThrow(() -> new UnauthorizedException("Invalid username or password"));
-        if (!passwordEncoder.matches(rawPassword, account.encodedPassword())) {
-            throw new UnauthorizedException("Invalid username or password");
+        Optional<UserAccount> account = userAccountRepository.findByUsername(Usernames.normalize(username));
+        // Always run a hash comparison so response time does not reveal whether the username exists.
+        String encodedPassword = account.map(UserAccount::encodedPassword).orElse(dummyEncodedPassword);
+        if (!passwordEncoder.matches(rawPassword, encodedPassword) || account.isEmpty()) {
+            throw new UnauthorizedException(INVALID_CREDENTIALS);
         }
-        return issueToken(account);
+        if (UserAccount.STATUS_DEACTIVATED.equals(account.get().status())) {
+            throw new UnauthorizedException("Account has been deactivated");
+        }
+        return issueToken(account.get());
     }
 
     private AuthToken issueToken(UserAccount account) {
         return new AuthToken(
                 jwtTokenService.issue(account.username()),
-                "Bearer",
+                TOKEN_TYPE,
                 jwtTokenService.expiresInSeconds()
         );
-    }
-
-    private String normalizeUsername(String username) {
-        return username.trim().toLowerCase(Locale.ROOT);
     }
 }
