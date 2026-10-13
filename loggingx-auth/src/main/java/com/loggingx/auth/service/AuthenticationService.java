@@ -3,6 +3,7 @@ package com.loggingx.auth.service;
 import com.loggingx.auth.model.AuthToken;
 import com.loggingx.common.exception.ConflictException;
 import com.loggingx.common.exception.UnauthorizedException;
+import com.loggingx.common.util.PasswordPolicy;
 import com.loggingx.common.util.Usernames;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
@@ -45,6 +46,7 @@ public class AuthenticationService {
     }
 
     public AuthToken register(String username, String rawPassword) {
+        PasswordPolicy.requireValid(rawPassword);
         String normalizedUsername = Usernames.normalize(username);
         Set<Long> roleIds = roleRepository.findByCode(DEFAULT_ROLE_CODE).map(Role::id).map(Set::of).orElse(Set.of());
         Instant now = Instant.now();
@@ -53,6 +55,7 @@ public class AuthenticationService {
                 null,
                 normalizedUsername,
                 passwordEncoder.encode(rawPassword),
+                0,
                 normalizedUsername,
                 null,
                 null,
@@ -75,7 +78,7 @@ public class AuthenticationService {
         if (!passwordEncoder.matches(rawPassword, encodedPassword) || account.isEmpty()) {
             throw new UnauthorizedException(INVALID_CREDENTIALS);
         }
-        if (UserAccount.STATUS_DEACTIVATED.equals(account.get().status())) {
+        if (account.get().isDeactivated()) {
             throw new UnauthorizedException("Account has been deactivated");
         }
         return issueToken(account.get());
@@ -83,7 +86,7 @@ public class AuthenticationService {
 
     private AuthToken issueToken(UserAccount account) {
         return new AuthToken(
-                jwtTokenService.issue(account.username()),
+                jwtTokenService.issue(account.id(), account.tokenVersion()),
                 TOKEN_TYPE,
                 jwtTokenService.expiresInSeconds()
         );

@@ -20,19 +20,21 @@ loggingx-java
 
 需要 Java 25 和 Maven 3.6.3 或更高版本：
 
+本地开发使用 `dev` profile，它提供本地 JWT 密钥并写入演示数据：
+
 ```shell
-mvn spring-boot:run -pl loggingx-web -am
+mvn spring-boot:run -pl loggingx-web -am -Dspring-boot.run.profiles=dev
 ```
 
-生产环境必须通过环境变量设置至少 32 字符的 JWT 密钥：
+非 `dev` 环境没有默认密钥，必须通过环境变量设置至少 32 字节的 JWT 密钥，否则启动失败：
 
 ```shell
 LOGGINGX_SECURITY_JWT_SECRET=your-long-random-secret
 ```
 
-用户、角色、菜单数据由内存仓储保存，服务重启后会恢复为初始演示数据；后续接入数据库时，只需要替换 `loggingx-dao` 中各 `*Repository` 的实现，并设置 `loggingx.demo-data.enabled=false`。
+用户、角色、菜单数据由内存仓储保存，服务重启后会丢失；后续接入数据库时，只需要替换 `loggingx-dao` 中各 `*Repository` 的实现。
 
-启动时会写入与前端路由一致的菜单，以及三个演示账号（密码均为 `123456`）：
+`dev` profile 下启动时会写入与前端路由一致的菜单，以及三个演示账号（密码均为 `123456`，仅用于演示，不受下文密码规则约束）：
 
 | 账号 | 角色 | 可访问菜单 |
 | --- | --- | --- |
@@ -43,7 +45,8 @@ LOGGINGX_SECURITY_JWT_SECRET=your-long-random-secret
 ## 接口约定
 
 - 响应统一为 `{"code": 200, "msg": "OK", "data": ...}`；失败时 `code` 为 HTTP 状态码，`msg` 为原因。
-- 除 `/api/auth/**` 外均需携带 `Authorization: Bearer <token>`。
+- 除 `/api/auth/**` 外均需携带 `Authorization: Bearer <token>`。token 绑定用户 ID；修改密码或停用账号后，该用户已签发的 token 立即失效。
+- 密码长度 8–100 位（`PasswordPolicy`），注册、新增用户、修改密码统一校验。
 - 管理接口按"角色被分配的菜单"授权：能访问用户管理菜单（User）才能调用用户接口，角色管理（Role）、菜单管理（Menus）同理。
 
 | 方法 | 路径 | 说明 |

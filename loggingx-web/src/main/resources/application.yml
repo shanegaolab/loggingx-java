@@ -5,8 +5,8 @@ spring:
 loggingx:
   security:
     jwt:
-      # Override this value with LOGGINGX_SECURITY_JWT_SECRET in production.
-      secret: ${LOGGINGX_SECURITY_JWT_SECRET:change-this-development-secret-before-production-2026}
+      # Required: at least 32 bytes. Startup fails if it is not set; the dev profile provides a local value.
+      secret: ${LOGGINGX_SECURITY_JWT_SECRET:}
       expiration: ${LOGGINGX_SECURITY_JWT_EXPIRATION:2h}
 
 management:

@@ -1,5 +1,6 @@
 package com.loggingx.auth.security;
 
+import com.loggingx.auth.model.AccessTokenClaims;
 import com.loggingx.auth.service.JwtTokenService;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
@@ -43,20 +44,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
-            String token = resolveBearerToken(request);
-            if (token != null) {
-                String username = jwtTokenService.parseUsername(token);
-                if (username != null && !username.isBlank()) {
-                    userAccountRepository.findByUsername(username)
-                            .filter(account -> !UserAccount.STATUS_DEACTIVATED.equals(account.status()))
-                            .map(this::authenticationFor)
-                            .ifPresent(authentication -> SecurityContextHolder.getContext().setAuthentication(authentication));
-                }
-            }
+            Optional.ofNullable(resolveBearerToken(request))
+                    .flatMap(jwtTokenService::parse)
+                    .flatMap(this::activeAccountFor)
+                    .map(this::authenticationFor)
+                    .ifPresent(authentication -> SecurityContextHolder.getContext().setAuthentication(authentication));
         }
         filterChain.doFilter(request, response);
     }
 
+    private Optional<UserAccount> activeAccountFor(AccessTokenClaims claims) {
+        return userAccountRepository.findById(claims.userId())
+                .filter(account -> account.tokenVersion() == claims.tokenVersion())
+                .filter(account -> !account.isDeactivated());
+    }
+
+    /**
+     * The principal name is the account's current username, which the services use to look up the caller.
+     */
     private UsernamePasswordAuthenticationToken authenticationFor(UserAccount account) {
         List<SimpleGrantedAuthority> authorities = account.roleIds().stream()
                 .map(roleRepository::findById)

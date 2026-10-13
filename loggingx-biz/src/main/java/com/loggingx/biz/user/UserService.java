@@ -7,6 +7,7 @@ import com.loggingx.common.exception.BadRequestException;
 import com.loggingx.common.exception.ConflictException;
 import com.loggingx.common.exception.ForbiddenException;
 import com.loggingx.common.exception.NotFoundException;
+import com.loggingx.common.util.PasswordPolicy;
 import com.loggingx.common.util.Usernames;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
@@ -27,8 +28,6 @@ import java.util.Set;
  */
 @Service
 public class UserService {
-
-    private static final int MIN_PASSWORD_LENGTH = 6;
 
     private final UserAccountRepository userAccountRepository;
     private final RoleRepository roleRepository;
@@ -77,17 +76,15 @@ public class UserService {
         if (grantsSuperRole(roleIds) && !permissionService.isSuperAdmin(operator)) {
             throw new ForbiddenException("Only a super administrator can grant the super administrator role");
         }
-        String password = command.password();
-        if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
-            throw new BadRequestException("Password must contain at least " + MIN_PASSWORD_LENGTH + " characters");
-        }
+        PasswordPolicy.requireValid(command.password());
 
         String username = Usernames.normalize(command.username());
         Instant now = Instant.now();
         UserAccount account = new UserAccount(
                 null,
                 username,
-                passwordEncoder.encode(password),
+                passwordEncoder.encode(command.password()),
+                0,
                 textOr(command.nickName(), username),
                 command.gender(),
                 trimToNull(command.phone()),
@@ -123,18 +120,22 @@ public class UserService {
 
         String password = command.password();
         String encodedPassword = existing.encodedPassword();
-        if (password != null && !password.isBlank()) {
-            if (password.length() < MIN_PASSWORD_LENGTH) {
-                throw new BadRequestException("Password must contain at least " + MIN_PASSWORD_LENGTH + " characters");
-            }
+        boolean passwordChanged = password != null && !password.isBlank();
+        if (passwordChanged) {
+            PasswordPolicy.requireValid(password);
             encodedPassword = passwordEncoder.encode(password);
         }
+        // Revoke outstanding tokens when the password changes or the account is deactivated, so that they do not
+        // come back to life if the account is later reactivated.
+        boolean deactivating = UserAccount.STATUS_DEACTIVATED.equals(status) && !existing.isDeactivated();
+        int tokenVersion = passwordChanged || deactivating ? existing.tokenVersion() + 1 : existing.tokenVersion();
 
         String username = Usernames.normalize(command.username());
         UserAccount updated = new UserAccount(
                 id,
                 username,
                 encodedPassword,
+                tokenVersion,
                 textOr(command.nickName(), username),
                 command.gender(),
                 trimToNull(command.phone()),
