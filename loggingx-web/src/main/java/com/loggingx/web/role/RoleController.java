@@ -10,6 +10,7 @@ import com.loggingx.web.role.dto.RoleRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -57,13 +58,18 @@ public class RoleController {
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<RoleListItemResponse> update(@PathVariable Long id, @Valid @RequestBody RoleRequest request) {
-        return ApiResponse.success(RoleListItemResponse.from(roleService.update(id, request.toCommand())));
+    public ApiResponse<RoleListItemResponse> update(
+            @PathVariable Long id,
+            @Valid @RequestBody RoleRequest request,
+            Authentication authentication
+    ) {
+        return ApiResponse.success(RoleListItemResponse.from(
+                roleService.update(id, request.toCommand(), authentication.getName())));
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(@PathVariable Long id) {
-        roleService.delete(id);
+    public ApiResponse<Void> delete(@PathVariable Long id, Authentication authentication) {
+        roleService.delete(id, authentication.getName());
         return ApiResponse.success(null);
     }
 
@@ -73,8 +79,12 @@ public class RoleController {
     }
 
     @PutMapping("/{id}/menus")
-    public ApiResponse<Void> assignMenus(@PathVariable Long id, @Valid @RequestBody RoleMenusRequest request) {
-        roleService.assignMenus(id, request.menuIds());
+    public ApiResponse<Void> assignMenus(
+            @PathVariable Long id,
+            @Valid @RequestBody RoleMenusRequest request,
+            Authentication authentication
+    ) {
+        roleService.assignMenus(id, request.menuIds(), authentication.getName());
         return ApiResponse.success(null);
     }
 }

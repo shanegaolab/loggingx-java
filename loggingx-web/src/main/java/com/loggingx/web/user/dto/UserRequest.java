@@ -3,6 +3,7 @@ package com.loggingx.web.user.dto;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.loggingx.biz.user.UserCommand;
 import com.loggingx.common.util.PasswordPolicy;
+import com.loggingx.common.util.UsernamePolicy;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -17,7 +18,7 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record UserRequest(
         @NotBlank(message = "userName must not be blank")
-        @Size(min = 2, max = 20, message = "userName must be between 2 and 20 characters")
+        @Size(min = UsernamePolicy.MIN_LENGTH, max = UsernamePolicy.MAX_LENGTH, message = UsernamePolicy.LENGTH_MESSAGE)
         String userName,
         // Blank is allowed on update, so the minimum length is enforced by UserService via PasswordPolicy.
         @Size(max = PasswordPolicy.MAX_LENGTH, message = PasswordPolicy.LENGTH_MESSAGE)

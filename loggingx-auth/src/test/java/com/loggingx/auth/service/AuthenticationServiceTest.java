@@ -2,6 +2,7 @@ package com.loggingx.auth.service;
 
 import com.loggingx.auth.model.AuthToken;
 import com.loggingx.common.exception.BadRequestException;
+import com.loggingx.common.exception.TooManyRequestsException;
 import com.loggingx.common.exception.UnauthorizedException;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,8 +42,11 @@ class AuthenticationServiceTest {
     @Mock
     private JwtTokenService jwtTokenService;
 
+    private final LoginAttemptLimiter loginAttemptLimiter = new LoginAttemptLimiter();
+
     private AuthenticationService newService() {
-        return new AuthenticationService(userAccountRepository, roleRepository, passwordEncoder, jwtTokenService);
+        return new AuthenticationService(userAccountRepository, roleRepository, passwordEncoder, jwtTokenService,
+                loginAttemptLimiter);
     }
 
     private static UserAccount account(String username, String encodedPassword, String status) {
@@ -79,6 +84,32 @@ class AuthenticationServiceTest {
 
         assertThrows(BadRequestException.class, () -> service.register("alice", "short"));
         verify(userAccountRepository, never()).insert(any());
+    }
+
+    @Test
+    void registerRejectsUsernameWithWhitespace() {
+        AuthenticationService service = newService();
+
+        assertThrows(BadRequestException.class, () -> service.register("al ice", "password123"));
+        verify(userAccountRepository, never()).insert(any());
+    }
+
+    @Test
+    void loginLocksUsernameAfterRepeatedFailures() {
+        AuthenticationService service = newService();
+        when(userAccountRepository.findByUsername("alice"))
+                .thenReturn(Optional.of(account("alice", "encoded-password", UserAccount.STATUS_ONLINE)));
+        when(passwordEncoder.matches("wrong-password", "encoded-password")).thenReturn(false);
+
+        for (int i = 0; i < LoginAttemptLimiter.MAX_FAILURES; i++) {
+            assertThrows(UnauthorizedException.class, () -> service.login("alice", "wrong-password"));
+        }
+
+        // Locked: even the right password is refused, and it is not checked at all.
+        assertThrows(TooManyRequestsException.class, () -> service.login("Alice", "password123"));
+        verify(passwordEncoder, never()).matches("password123", "encoded-password");
+        verify(passwordEncoder, times(LoginAttemptLimiter.MAX_FAILURES))
+                .matches("wrong-password", "encoded-password");
     }
 
     @Test

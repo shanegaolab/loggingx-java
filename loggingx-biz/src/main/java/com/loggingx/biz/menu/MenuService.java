@@ -1,15 +1,16 @@
 package com.loggingx.biz.menu;
 
 import com.loggingx.biz.permission.PermissionService;
+import com.loggingx.biz.support.Updates;
 import com.loggingx.common.exception.BadRequestException;
 import com.loggingx.common.exception.ConflictException;
 import com.loggingx.common.exception.NotFoundException;
+import com.loggingx.common.util.Strings;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
 import com.loggingx.dao.menu.Menu;
 import com.loggingx.dao.menu.MenuRepository;
 import com.loggingx.dao.menu.MenuType;
-import com.loggingx.dao.role.Role;
 import com.loggingx.dao.role.RoleRepository;
 import org.springframework.stereotype.Service;
 
@@ -20,7 +21,6 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -29,6 +29,8 @@ public class MenuService {
 
     /** Component of a top-level directory: the layout that hosts its child pages. */
     public static final String LAYOUT_COMPONENT = "/index/index";
+
+    private static final String MENU_NOT_FOUND = "Menu was not found";
 
     private static final Comparator<Menu> DISPLAY_ORDER = Comparator.comparingInt(Menu::sort).thenComparing(Menu::id);
 
@@ -81,7 +83,7 @@ public class MenuService {
             ensureAuthMarkUnique(parentId, command.authMark(), null);
         }
         Menu menu = toMenu(null, parentId, command.type(), command);
-        return menuRepository.insert(menu).orElseThrow(() -> duplicateRouteName(command.name()));
+        return menuRepository.insert(menu).orElseThrow(() -> duplicateRouteName(menu.name()));
     }
 
     public Menu update(Long id, MenuCommand command) {
@@ -90,9 +92,8 @@ public class MenuService {
             ensureAuthMarkUnique(existing.parentId(), command.authMark(), id);
         }
         Menu updated = toMenu(id, existing.parentId(), existing.type(), command);
-        if (!menuRepository.update(updated)) {
-            throw duplicateRouteName(command.name());
-        }
+        Updates.require(menuRepository.update(existing, updated), MENU_NOT_FOUND,
+                () -> duplicateRouteName(updated.name()));
         return updated;
     }
 
@@ -105,14 +106,14 @@ public class MenuService {
         removed.forEach(menuRepository::deleteById);
 
         Instant now = Instant.now();
-        for (Role role : roleRepository.findAll()) {
-            if (role.menuIds().stream().anyMatch(removed::contains)) {
-                Set<Long> remaining = role.menuIds().stream()
-                        .filter(menuId -> !removed.contains(menuId))
-                        .collect(Collectors.toSet());
-                roleRepository.update(role.withMenuIds(remaining, now));
-            }
-        }
+        roleRepository.findAll().stream()
+                .filter(role -> role.menuIds().stream().anyMatch(removed::contains))
+                // Applied to the current role, so a concurrent menu assignment is not overwritten.
+                .forEach(role -> roleRepository.modify(role.id(), current -> current.withMenuIds(
+                        current.menuIds().stream()
+                                .filter(menuId -> !removed.contains(menuId))
+                                .collect(Collectors.toSet()),
+                        now)));
     }
 
     private List<MenuNode> buildTree(List<Menu> menus) {
@@ -143,7 +144,8 @@ public class MenuService {
     }
 
     private static boolean isDirectory(Menu menu) {
-        return isBlank(menu.link()) && (isBlank(menu.component()) || LAYOUT_COMPONENT.equals(menu.component()));
+        return Strings.isBlank(menu.link())
+                && (Strings.isBlank(menu.component()) || LAYOUT_COMPONENT.equals(menu.component()));
     }
 
     private Set<Long> subtreeIds(Long rootId) {
@@ -161,11 +163,13 @@ public class MenuService {
     }
 
     private void ensureAuthMarkUnique(Long parentId, String authMark, Long selfId) {
-        boolean taken = menuRepository.findAll().stream()
+        // Marks are stored trimmed, so compare the trimmed value; a blank mark is rejected by toMenu.
+        String mark = Strings.trimToNull(authMark);
+        boolean taken = mark != null && menuRepository.findAll().stream()
                 .anyMatch(menu -> menu.isButton() && menu.parentId().equals(parentId)
-                        && menu.authMark().equals(authMark) && !Objects.equals(menu.id(), selfId));
+                        && mark.equals(menu.authMark()) && !menu.id().equals(selfId));
         if (taken) {
-            throw new ConflictException("Permission mark '" + authMark + "' already exists on this menu");
+            throw new ConflictException("Permission mark '" + mark + "' already exists on this menu");
         }
     }
 
@@ -182,14 +186,15 @@ public class MenuService {
         requireText(command.name(), "Route name must not be blank");
         requireText(command.path(), "Route path must not be blank");
         return new Menu(id, parentId, type, command.name().trim(), command.path().trim(),
-                trimToNull(command.component()), command.title().trim(), trimToNull(command.icon()), command.sort(),
-                command.enabled(), command.keepAlive(), command.hidden(), command.hideTab(),
-                trimToNull(command.link()), command.iframe(), command.showBadge(), trimToNull(command.textBadge()),
-                command.fixedTab(), trimToNull(command.activePath()), command.fullPage(), null, now);
+                Strings.trimToNull(command.component()), command.title().trim(), Strings.trimToNull(command.icon()),
+                command.sort(), command.enabled(), command.keepAlive(), command.hidden(), command.hideTab(),
+                Strings.trimToNull(command.link()), command.iframe(), command.showBadge(),
+                Strings.trimToNull(command.textBadge()), command.fixedTab(), Strings.trimToNull(command.activePath()),
+                command.fullPage(), null, now);
     }
 
     private Menu requireMenu(Long id) {
-        return menuRepository.findById(id).orElseThrow(() -> new NotFoundException("Menu was not found"));
+        return menuRepository.findById(id).orElseThrow(() -> new NotFoundException(MENU_NOT_FOUND));
     }
 
     private static ConflictException duplicateRouteName(String name) {
@@ -197,16 +202,8 @@ public class MenuService {
     }
 
     private static void requireText(String value, String message) {
-        if (isBlank(value)) {
+        if (Strings.isBlank(value)) {
             throw new BadRequestException(message);
         }
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
-
-    private static String trimToNull(String value) {
-        return isBlank(value) ? null : value.trim();
     }
 }

@@ -2,8 +2,10 @@ package com.loggingx.auth.service;
 
 import com.loggingx.auth.model.AuthToken;
 import com.loggingx.common.exception.ConflictException;
+import com.loggingx.common.exception.TooManyRequestsException;
 import com.loggingx.common.exception.UnauthorizedException;
 import com.loggingx.common.util.PasswordPolicy;
+import com.loggingx.common.util.UsernamePolicy;
 import com.loggingx.common.util.Usernames;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
@@ -30,24 +32,27 @@ public class AuthenticationService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
+    private final LoginAttemptLimiter loginAttemptLimiter;
     private final String dummyEncodedPassword;
 
     public AuthenticationService(
             UserAccountRepository userAccountRepository,
             RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
-            JwtTokenService jwtTokenService
+            JwtTokenService jwtTokenService,
+            LoginAttemptLimiter loginAttemptLimiter
     ) {
         this.userAccountRepository = userAccountRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
+        this.loginAttemptLimiter = loginAttemptLimiter;
         this.dummyEncodedPassword = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
     public AuthToken register(String username, String rawPassword) {
+        String normalizedUsername = UsernamePolicy.requireValid(username);
         PasswordPolicy.requireValid(rawPassword);
-        String normalizedUsername = Usernames.normalize(username);
         Set<Long> roleIds = roleRepository.findByCode(DEFAULT_ROLE_CODE).map(Role::id).map(Set::of).orElse(Set.of());
         Instant now = Instant.now();
 
@@ -72,12 +77,18 @@ public class AuthenticationService {
     }
 
     public AuthToken login(String username, String rawPassword) {
-        Optional<UserAccount> account = userAccountRepository.findByUsername(Usernames.normalize(username));
+        String normalizedUsername = Usernames.normalize(username);
+        if (loginAttemptLimiter.isLocked(normalizedUsername)) {
+            throw new TooManyRequestsException("Too many failed login attempts; try again later");
+        }
+        Optional<UserAccount> account = userAccountRepository.findByUsername(normalizedUsername);
         // Always run a hash comparison so response time does not reveal whether the username exists.
         String encodedPassword = account.map(UserAccount::encodedPassword).orElse(dummyEncodedPassword);
         if (!passwordEncoder.matches(rawPassword, encodedPassword) || account.isEmpty()) {
+            loginAttemptLimiter.recordFailure(normalizedUsername);
             throw new UnauthorizedException(INVALID_CREDENTIALS);
         }
+        loginAttemptLimiter.recordSuccess(normalizedUsername);
         if (account.get().isDeactivated()) {
             throw new UnauthorizedException("Account has been deactivated");
         }

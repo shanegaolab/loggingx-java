@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 
 /**
  * Thread-safe in-memory store. Every operation is synchronized so unique-key checks and writes are atomic.
@@ -47,13 +48,40 @@ public abstract class AbstractInMemoryRepository<T> implements EntityRepository<
     }
 
     @Override
-    public synchronized boolean update(T entity) {
-        Long id = idOf(entity);
-        if (!entities.containsKey(id) || isUniqueKeyTaken(entity, id)) {
-            return false;
+    public synchronized UpdateResult update(T expected, T updated) {
+        Long id = idOf(updated);
+        if (!Objects.equals(idOf(expected), id)) {
+            throw new IllegalArgumentException("expected and updated must have the same id");
         }
-        entities.put(id, entity);
-        return true;
+        T current = entities.get(id);
+        if (current == null) {
+            return UpdateResult.NOT_FOUND;
+        }
+        if (!current.equals(expected)) {
+            return UpdateResult.STALE;
+        }
+        return store(id, updated);
+    }
+
+    @Override
+    public synchronized UpdateResult modify(Long id, UnaryOperator<T> change) {
+        T current = entities.get(id);
+        if (current == null) {
+            return UpdateResult.NOT_FOUND;
+        }
+        T updated = change.apply(current);
+        if (!Objects.equals(idOf(updated), id)) {
+            throw new IllegalArgumentException("change must keep the entity id");
+        }
+        return store(id, updated);
+    }
+
+    private UpdateResult store(Long id, T updated) {
+        if (isUniqueKeyTaken(updated, id)) {
+            return UpdateResult.DUPLICATE_KEY;
+        }
+        entities.put(id, updated);
+        return UpdateResult.UPDATED;
     }
 
     @Override

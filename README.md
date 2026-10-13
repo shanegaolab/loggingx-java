@@ -32,9 +32,16 @@ mvn spring-boot:run -pl loggingx-web -am -Dspring-boot.run.profiles=dev
 LOGGINGX_SECURITY_JWT_SECRET=your-long-random-secret
 ```
 
-用户、角色、菜单数据由内存仓储保存，服务重启后会丢失；后续接入数据库时，只需要替换 `loggingx-dao` 中各 `*Repository` 的实现。
+用户、角色、菜单数据由内存仓储保存，服务重启后会丢失；后续接入数据库时，只需要替换 `loggingx-dao` 中各 `*Repository` 的实现。仓储的 `update(expected, updated)` 是比较并交换（CAS）语义，数据库实现可用版本号列实现。
 
-`dev` profile 下启动时会写入与前端路由一致的菜单，以及三个演示账号（密码均为 `123456`，仅用于演示，不受下文密码规则约束）：
+任何环境启动时，若仓储为空，都会写入与前端路由一致的菜单和 R_SUPER / R_ADMIN / R_USER 三个角色（`SystemDataInitializer`）。若没有任何账号持有 R_SUPER，会按下列环境变量创建第一个超级管理员；未设置密码时只打印警告。首次登录后请修改其密码：
+
+```shell
+LOGGINGX_BOOTSTRAP_SUPER_ADMIN_USERNAME=super          # 可选，默认 super
+LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password  # 需满足密码规则
+```
+
+`dev` profile 下另外写入三个演示账号（密码均为 `123456`，仅用于演示，不受下文密码规则约束）：
 
 | 账号 | 角色 | 可访问菜单 |
 | --- | --- | --- |
@@ -46,8 +53,13 @@ LOGGINGX_SECURITY_JWT_SECRET=your-long-random-secret
 
 - 响应统一为 `{"code": 200, "msg": "OK", "data": ...}`；失败时 `code` 为 HTTP 状态码，`msg` 为原因。
 - 除 `/api/auth/**` 外均需携带 `Authorization: Bearer <token>`。token 绑定用户 ID；修改密码或停用账号后，该用户已签发的 token 立即失效。
+- 认证失败（未登录、token 失效）返回 401，无权限返回 403，响应体同样是上述结构。
+- 用户名去除首尾空格后为 2–50 位、不含空白字符，统一转小写（`UsernamePolicy`）。
 - 密码长度 8–100 位（`PasswordPolicy`），注册、新增用户、修改密码统一校验。
+- 同一用户名 15 分钟内连续登录失败 5 次后锁定 15 分钟，期间登录返回 429（`LoginAttemptLimiter`，仅保存在单实例内存中）。
 - 管理接口按"角色被分配的菜单"授权：能访问用户管理菜单（User）才能调用用户接口，角色管理（Role）、菜单管理（Menus）同理。
+- 非超级管理员只能授予、管理自己已拥有的权限：分配的角色或菜单，以及被修改的用户或角色当前拥有的权限，都必须是操作人权限的子集，否则返回 403。
+- 编辑时若记录已被他人修改，返回 409，需刷新后重试。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

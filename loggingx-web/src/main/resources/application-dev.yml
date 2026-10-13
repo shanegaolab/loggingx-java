@@ -1,4 +1,4 @@
-# Local development only: seeds demo menus, roles and accounts (see DemoDataInitializer).
+# Local development only: seeds demo accounts (see DemoDataInitializer).
 loggingx:
   security:
     jwt:

@@ -9,6 +9,7 @@ import com.loggingx.dao.role.RoleRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -75,11 +76,33 @@ public class PermissionService {
      */
     public Set<Long> accessibleMenuIds(UserAccount account) {
         if (isSuperAdmin(account)) {
-            return menuRepository.findAll().stream().map(Menu::id).collect(Collectors.toSet());
+            return allMenuIds();
         }
         return enabledRolesOf(account).stream()
                 .flatMap(role -> role.menuIds().stream())
                 .collect(Collectors.toSet());
+    }
+
+    /**
+     * @return ids of every menu and button the roles grant, whether or not a role is enabled, since a disabled
+     *         role can be enabled later; the super role grants every menu
+     */
+    public Set<Long> menuIdsGrantedBy(Collection<Long> roleIds) {
+        List<Role> roles = roleIds.stream().map(roleRepository::findById).flatMap(Optional::stream).toList();
+        if (roles.stream().anyMatch(role -> SUPER_ROLE_CODE.equals(role.code()))) {
+            return allMenuIds();
+        }
+        return roles.stream().flatMap(role -> role.menuIds().stream()).collect(Collectors.toSet());
+    }
+
+    /**
+     * Administrators may only hand out, or manage holders of, permissions they hold themselves; otherwise anyone
+     * who can edit users or roles could grant themselves everything.
+     *
+     * @return whether the user can currently access every given menu and button
+     */
+    public boolean holdsAll(UserAccount account, Set<Long> menuIds) {
+        return accessibleMenuIds(account).containsAll(menuIds);
     }
 
     /**
@@ -92,5 +115,9 @@ public class PermissionService {
                 .map(Menu::authMark)
                 .distinct()
                 .toList();
+    }
+
+    private Set<Long> allMenuIds() {
+        return menuRepository.findAll().stream().map(Menu::id).collect(Collectors.toSet());
     }
 }

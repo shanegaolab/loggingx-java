@@ -4,9 +4,11 @@ import com.loggingx.common.api.ApiResponse;
 import com.loggingx.common.exception.ApplicationException;
 import com.loggingx.common.exception.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +29,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final String VALIDATION_FAILED = "Request validation failed";
 
     @ExceptionHandler(ApplicationException.class)
     public ResponseEntity<ApiResponse<Void>> handleApplicationException(ApplicationException exception) {
@@ -47,23 +50,46 @@ public class GlobalExceptionHandler {
         return badRequest("Request body is invalid");
     }
 
+    /**
+     * Thrown for invalid {@code @RequestBody} and query-object fields. A binding failure (e.g. text for a number)
+     * carries a conversion message that names Java types, so only the field is reported for it.
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleInvalidBody(MethodArgumentNotValidException exception) {
         String message = exception.getBindingResult().getFieldErrors().stream()
                 .findFirst()
-                .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .orElse("Request validation failed");
+                .map(error -> error.getField() + ": "
+                        + (error.isBindingFailure() ? "invalid value" : error.getDefaultMessage()))
+                .orElse(VALIDATION_FAILED);
         return badRequest(message);
     }
 
-    @ExceptionHandler({
-            HandlerMethodValidationException.class,
-            ConstraintViolationException.class,
-            MissingServletRequestParameterException.class,
-            MethodArgumentTypeMismatchException.class
-    })
-    public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(Exception exception) {
-        return badRequest(exception.getMessage());
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInvalidParameters(HandlerMethodValidationException exception) {
+        String message = exception.getAllErrors().stream()
+                .findFirst()
+                .map(MessageSourceResolvable::getDefaultMessage)
+                .orElse(VALIDATION_FAILED);
+        return badRequest(message);
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(ConstraintViolationException exception) {
+        String message = exception.getConstraintViolations().stream()
+                .findFirst()
+                .map(ConstraintViolation::getMessage)
+                .orElse(VALIDATION_FAILED);
+        return badRequest(message);
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingParameter(MissingServletRequestParameterException exception) {
+        return badRequest("Parameter '" + exception.getParameterName() + "' is required");
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
+        return badRequest("Parameter '" + exception.getName() + "' has an invalid value");
     }
 
     @ExceptionHandler(Exception.class)
@@ -87,6 +113,7 @@ public class GlobalExceptionHandler {
             case UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
             case FORBIDDEN -> HttpStatus.FORBIDDEN;
             case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+            case TOO_MANY_REQUESTS -> HttpStatus.TOO_MANY_REQUESTS;
             case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
     }

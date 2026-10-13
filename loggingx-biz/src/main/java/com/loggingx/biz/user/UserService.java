@@ -2,13 +2,15 @@ package com.loggingx.biz.user;
 
 import com.loggingx.biz.permission.PermissionService;
 import com.loggingx.biz.support.Filters;
+import com.loggingx.biz.support.Updates;
 import com.loggingx.common.api.PageResult;
 import com.loggingx.common.exception.BadRequestException;
 import com.loggingx.common.exception.ConflictException;
 import com.loggingx.common.exception.ForbiddenException;
 import com.loggingx.common.exception.NotFoundException;
 import com.loggingx.common.util.PasswordPolicy;
-import com.loggingx.common.util.Usernames;
+import com.loggingx.common.util.Strings;
+import com.loggingx.common.util.UsernamePolicy;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
 import com.loggingx.dao.role.Role;
@@ -24,10 +26,13 @@ import java.util.Set;
 
 /**
  * User administration. Only a super administrator may grant the super administrator role or change a
- * super administrator account, and nobody can delete, deactivate or demote themselves.
+ * super administrator account, and nobody can delete, deactivate or demote themselves. Other administrators may
+ * only grant roles, and manage users, whose permissions they hold themselves.
  */
 @Service
 public class UserService {
+
+    private static final String USER_NOT_FOUND = "User account was not found";
 
     private final UserAccountRepository userAccountRepository;
     private final RoleRepository roleRepository;
@@ -76,21 +81,22 @@ public class UserService {
         if (grantsSuperRole(roleIds) && !permissionService.isSuperAdmin(operator)) {
             throw new ForbiddenException("Only a super administrator can grant the super administrator role");
         }
+        requireCanGrant(operator, roleIds);
+        String username = UsernamePolicy.requireValid(command.username());
         PasswordPolicy.requireValid(command.password());
 
-        String username = Usernames.normalize(command.username());
         Instant now = Instant.now();
         UserAccount account = new UserAccount(
                 null,
                 username,
                 passwordEncoder.encode(command.password()),
                 0,
-                textOr(command.nickName(), username),
+                Strings.trimOr(command.nickName(), username),
                 command.gender(),
-                trimToNull(command.phone()),
-                trimToNull(command.email()),
+                Strings.trimToNull(command.phone()),
+                Strings.trimToNull(command.email()),
                 null,
-                textOr(command.status(), UserAccount.STATUS_ONLINE),
+                Strings.trimOr(command.status(), UserAccount.STATUS_ONLINE),
                 roleIds,
                 now,
                 operator.username(),
@@ -108,7 +114,9 @@ public class UserService {
         if (!operatorIsSuper && (permissionService.isSuperAdmin(existing) || grantsSuperRole(roleIds))) {
             throw new ForbiddenException("Only a super administrator can manage super administrator accounts");
         }
-        String status = textOr(command.status(), existing.status());
+        requireCanManage(operator, existing);
+        requireCanGrant(operator, roleIds);
+        String status = Strings.trimOr(command.status(), existing.status());
         if (existing.id().equals(operator.id())) {
             if (UserAccount.STATUS_DEACTIVATED.equals(status)) {
                 throw new BadRequestException("You cannot deactivate your own account");
@@ -117,6 +125,7 @@ public class UserService {
                 throw new BadRequestException("You cannot remove your own super administrator role");
             }
         }
+        String username = UsernamePolicy.requireValid(command.username());
 
         String password = command.password();
         String encodedPassword = existing.encodedPassword();
@@ -130,16 +139,15 @@ public class UserService {
         boolean deactivating = UserAccount.STATUS_DEACTIVATED.equals(status) && !existing.isDeactivated();
         int tokenVersion = passwordChanged || deactivating ? existing.tokenVersion() + 1 : existing.tokenVersion();
 
-        String username = Usernames.normalize(command.username());
         UserAccount updated = new UserAccount(
                 id,
                 username,
                 encodedPassword,
                 tokenVersion,
-                textOr(command.nickName(), username),
+                Strings.trimOr(command.nickName(), username),
                 command.gender(),
-                trimToNull(command.phone()),
-                trimToNull(command.email()),
+                Strings.trimToNull(command.phone()),
+                Strings.trimToNull(command.email()),
                 existing.avatar(),
                 status,
                 roleIds,
@@ -148,9 +156,9 @@ public class UserService {
                 Instant.now(),
                 operator.username()
         );
-        if (!userAccountRepository.update(updated)) {
-            throw duplicateUsername(username);
-        }
+        // Compare-and-set, so a concurrent edit (e.g. one that just revoked tokens) is never silently undone.
+        Updates.require(userAccountRepository.update(existing, updated), USER_NOT_FOUND,
+                () -> duplicateUsername(username));
         return toView(updated);
     }
 
@@ -163,6 +171,7 @@ public class UserService {
         if (permissionService.isSuperAdmin(target) && !permissionService.isSuperAdmin(operator)) {
             throw new ForbiddenException("Only a super administrator can delete a super administrator account");
         }
+        requireCanManage(operator, target);
         userAccountRepository.deleteById(id);
     }
 
@@ -188,6 +197,18 @@ public class UserService {
         return roleIds;
     }
 
+    private void requireCanGrant(UserAccount operator, Set<Long> roleIds) {
+        if (!permissionService.holdsAll(operator, permissionService.menuIdsGrantedBy(roleIds))) {
+            throw new ForbiddenException("You cannot grant a role with permissions you do not hold");
+        }
+    }
+
+    private void requireCanManage(UserAccount operator, UserAccount target) {
+        if (!permissionService.holdsAll(operator, permissionService.menuIdsGrantedBy(target.roleIds()))) {
+            throw new ForbiddenException("You cannot manage a user who has permissions you do not hold");
+        }
+    }
+
     private boolean grantsSuperRole(Set<Long> roleIds) {
         return roleRepository.findByCode(PermissionService.SUPER_ROLE_CODE)
                 .map(role -> roleIds.contains(role.id()))
@@ -196,23 +217,15 @@ public class UserService {
 
     private UserAccount requireByUsername(String username) {
         return userAccountRepository.findByUsername(username)
-                .orElseThrow(() -> new NotFoundException("User account was not found"));
+                .orElseThrow(() -> new NotFoundException(USER_NOT_FOUND));
     }
 
     private UserAccount requireById(Long id) {
         return userAccountRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("User account was not found"));
+                .orElseThrow(() -> new NotFoundException(USER_NOT_FOUND));
     }
 
     private static ConflictException duplicateUsername(String username) {
         return new ConflictException("Username '" + username + "' is already taken");
-    }
-
-    private static String textOr(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value.trim();
-    }
-
-    private static String trimToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 }
