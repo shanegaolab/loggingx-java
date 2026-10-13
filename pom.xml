@@ -91,6 +91,11 @@
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
+                    <!-- Only loggingx-web is runnable; skipping elsewhere lets
+                         "mvn spring-boot:run -pl loggingx-web -am" pass over the other reactor modules. -->
+                    <configuration>
+                        <skip>true</skip>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>

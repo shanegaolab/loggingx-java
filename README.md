@@ -20,17 +20,32 @@ loggingx-java
 
 需要 Java 25 和 Maven 3.6.3 或更高版本：
 
-本地开发使用 `dev` profile，它提供本地 JWT 密钥并写入演示数据：
+本地开发使用 Spring Boot 内嵌的 Tomcat 和 `dev` profile，它提供本地 JWT 密钥并写入演示数据，服务地址为 `http://localhost:8080`：
 
 ```shell
 mvn spring-boot:run -pl loggingx-web -am -Dspring-boot.run.profiles=dev
 ```
 
-非 `dev` 环境没有默认密钥，必须通过环境变量设置至少 32 字节的 JWT 密钥，否则启动失败：
+### 部署到外部 Tomcat
+
+`loggingx-web` 打包为 WAR，Tomcat 相关依赖为 `provided`，不会与容器自带的 Tomcat 冲突：
 
 ```shell
-LOGGINGX_SECURITY_JWT_SECRET=your-long-random-secret
+mvn clean package
 ```
+
+产物为 `loggingx-web/target/loggingx.war`。要求：
+
+- **Tomcat 11**（Spring Boot 4 基于 Servlet 6.1 / Jakarta EE 11，Tomcat 10 及以下不可用），运行 Tomcat 的 JVM 为 **Java 25**。
+- 复制到 `$CATALINA_HOME/webapps/` 后，访问路径为 `/loggingx`，例如 `http://host:8080/loggingx/api/auth/login`。若要部署在根路径，改名为 `ROOT.war`。
+- 不激活 `dev` profile，因此必须提供 JWT 密钥（至少 32 字节），否则应用启动失败；首次部署时一并设置超级管理员密码（见下文）。可写在 `$CATALINA_HOME/bin/setenv.sh`（Windows 为 `setenv.bat`，用 `set NAME=value`）：
+
+```shell
+export LOGGINGX_SECURITY_JWT_SECRET=your-long-random-secret
+export LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password
+```
+
+日志输出到 Tomcat 的控制台日志（`logs/catalina.out` 或 `catalina.*.log`）。打包出的 WAR 也可以直接 `java -jar loggingx.war` 用内嵌 Tomcat 运行。
 
 用户、角色、菜单数据由内存仓储保存，服务重启后会丢失；后续接入数据库时，只需要替换 `loggingx-dao` 中各 `*Repository` 的实现。仓储的 `update(expected, updated)` 是比较并交换（CAS）语义，数据库实现可用版本号列实现。
 
