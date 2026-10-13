@@ -1,6 +1,7 @@
 package com.loggingx.auth.service;
 
 import com.loggingx.auth.model.AuthToken;
+import com.loggingx.common.exception.BadRequestException;
 import com.loggingx.common.exception.UnauthorizedException;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,7 +45,7 @@ class AuthenticationServiceTest {
     }
 
     private static UserAccount account(String username, String encodedPassword, String status) {
-        return new UserAccount(1L, username, encodedPassword, username, null, null, null, null, status,
+        return new UserAccount(1L, username, encodedPassword, 0, username, null, null, null, null, status,
                 Set.of(), null, null, null, null);
     }
 
@@ -55,7 +57,7 @@ class AuthenticationServiceTest {
         when(passwordEncoder.encode("password123")).thenReturn("encoded-password");
         when(userAccountRepository.insert(any())).thenAnswer(invocation ->
                 Optional.of(invocation.<UserAccount>getArgument(0).withId(7L)));
-        when(jwtTokenService.issue("alice")).thenReturn("access-token");
+        when(jwtTokenService.issue(7L, 0)).thenReturn("access-token");
         when(jwtTokenService.expiresInSeconds()).thenReturn(7200L);
 
         AuthToken token = service.register(" Alice ", "password123");
@@ -69,6 +71,14 @@ class AuthenticationServiceTest {
         assertEquals("alice", accountCaptor.getValue().username());
         assertEquals("encoded-password", accountCaptor.getValue().encodedPassword());
         assertEquals(Set.of(3L), accountCaptor.getValue().roleIds());
+    }
+
+    @Test
+    void registerRejectsPasswordThatViolatesPolicy() {
+        AuthenticationService service = newService();
+
+        assertThrows(BadRequestException.class, () -> service.register("alice", "short"));
+        verify(userAccountRepository, never()).insert(any());
     }
 
     @Test

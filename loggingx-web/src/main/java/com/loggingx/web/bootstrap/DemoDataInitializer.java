@@ -13,7 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -25,11 +25,11 @@ import java.util.Set;
  * Seeds the in-memory repositories with the menus, roles and demo accounts the frontend expects.
  * <p>
  * The menus mirror the frontend's static route modules. Demo accounts {@code super}, {@code admin} and
- * {@code user} all use the password {@value #DEMO_PASSWORD}. Disable with {@code loggingx.demo-data.enabled=false}
- * once a persistent repository is in place.
+ * {@code user} all use the password {@value #DEMO_PASSWORD}, which is shorter than {@code PasswordPolicy} allows
+ * so that it matches the frontend's demo login; it is only ever seeded under the {@code dev} profile.
  */
 @Component
-@ConditionalOnProperty(name = "loggingx.demo-data.enabled", havingValue = "true", matchIfMissing = true)
+@Profile("dev")
 public class DemoDataInitializer implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DemoDataInitializer.class);
@@ -98,8 +98,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         account("admin", "管理员", "1", "13800000002", "admin@loggingx.local", adminRole);
         account("user", "普通用户", "2", "13800000003", "user@loggingx.local", userRole);
 
-        log.info("Seeded demo data: {} menus, 3 roles, 3 accounts (password {})",
-                menuRepository.findAll().size(), DEMO_PASSWORD);
+        log.info("Seeded demo data: {} menus, 3 roles, 3 accounts", menuRepository.findAll().size());
     }
 
     private Long directory(String name, String path, String title, String icon, int sort) {
@@ -134,7 +133,7 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     private void account(String username, String nickName, String gender, String phone, String email, Long roleId) {
         Instant now = Instant.now();
-        userAccountRepository.insert(new UserAccount(null, username, passwordEncoder.encode(DEMO_PASSWORD),
+        userAccountRepository.insert(new UserAccount(null, username, passwordEncoder.encode(DEMO_PASSWORD), 0,
                 nickName, gender, phone, email, null, UserAccount.STATUS_ONLINE, Set.of(roleId), now, SYSTEM,
                 now, SYSTEM));
     }

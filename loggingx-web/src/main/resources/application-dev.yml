@@ -1,0 +1,5 @@
+# Local development only: seeds demo menus, roles and accounts (see DemoDataInitializer).
+loggingx:
+  security:
+    jwt:
+      secret: ${LOGGINGX_SECURITY_JWT_SECRET:local-development-secret-never-use-in-production}

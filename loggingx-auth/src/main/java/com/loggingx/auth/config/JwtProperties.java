@@ -4,10 +4,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 
+/**
+ * {@code secret} deliberately has no default: outside the {@code dev} profile it must be configured, and startup
+ * fails otherwise.
+ */
 @ConfigurationProperties(prefix = "loggingx.security.jwt")
 public class JwtProperties {
 
-    private String secret = "change-this-development-secret-before-production-2026";
+    private String secret;
     private Duration expiration = Duration.ofHours(2);
 
     public String getSecret() {
