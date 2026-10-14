@@ -1,19 +1,56 @@
 spring:
   application:
     name: loggingx
+  datasource:
+    # The driver caches prepared statements per connection, which pays off with a pool.
+    url: ${LOGGINGX_DATASOURCE_URL:jdbc:mysql://182.92.9.191:3306/loggingx?characterEncoding=UTF-8&useServerPrepStmts=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048}
+    username: ${LOGGINGX_DATASOURCE_USERNAME:loggingx}
+    password: ${LOGGINGX_DATASOURCE_PASSWORD:xG2cFFHZJjKJ2EjZ}
+    # HikariCP connection pool; times are in milliseconds.
+    hikari:
+      pool-name: loggingx-pool
+      # A fixed-size pool, as HikariCP recommends: minimum-idle defaults to maximum-pool-size.
+      maximum-pool-size: ${LOGGINGX_DATASOURCE_POOL_SIZE:10}
+      # How long a request waits for a free connection before failing (default 30 s).
+      connection-timeout: 10000
+      # Ping idle connections so firewalls and NAT gateways do not silently drop them.
+      keepalive-time: 300000
+  sql:
+    init:
+      # Creates missing tables at startup; the script only uses CREATE TABLE IF NOT EXISTS.
+      mode: always
+      schema-locations: classpath:db/schema.sql
+  # Lettuce shares one thread-safe connection across threads, so no connection pool is configured.
+  data:
+    redis:
+      host: ${LOGGINGX_REDIS_HOST:182.92.9.191}
+      port: ${LOGGINGX_REDIS_PORT:6380}
+      password: ${LOGGINGX_REDIS_PASSWORD:xG2cFFHZJjKJ2EjZ}
+      database: ${LOGGINGX_REDIS_DATABASE:0}
+      connect-timeout: 3s
+      # Keeps a slow or unreachable Redis from stalling logins for long.
+      timeout: 2s
+
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  # Registers UtcInstantTypeHandler in place of MyBatis' time-zone dependent Instant handling.
+  type-handlers-package: com.loggingx.dao.support
 
 loggingx:
+  cache:
+    # Roles and menus are cached in Redis and evicted on every write; this bounds how long a racing read can lag.
+    ttl: 10m
   security:
     jwt:
       # Required: at least 32 bytes. Startup fails if it is not set; the dev profile provides a local value.
-      secret: ${LOGGINGX_SECURITY_JWT_SECRET:}
-      expiration: ${LOGGINGX_SECURITY_JWT_EXPIRATION:2h}
+      secret: AHK67DSA89UI—12EA-FGQWXJ3689-S6GRYYY789987-SA78QWQ
+      expiration: 8h
   bootstrap:
     # When no account holds the super administrator role, one is created with these credentials at startup.
     # The password must satisfy PasswordPolicy; leave it empty to skip (a warning is logged).
     super-admin:
-      username: ${LOGGINGX_BOOTSTRAP_SUPER_ADMIN_USERNAME:super}
-      password: ${LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD:}
+      username: superuser
+      password: 66688888
 
 management:
   endpoints:

@@ -47,5 +47,14 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.github.fppt</groupId>
+            <artifactId>jedis-mock</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.loggingx</groupId>
+            <artifactId>loggingx-dao</artifactId>
+            <type>test-jar</type>
+        </dependency>
     </dependencies>
 </project>

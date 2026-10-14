@@ -1,5 +1,7 @@
 package com.loggingx.dao.menu;
 
+import com.loggingx.dao.support.Timestamps;
+
 import java.time.Instant;
 
 /**
@@ -36,6 +38,10 @@ public record Menu(
 ) {
 
     public static final long ROOT_PARENT_ID = 0L;
+
+    public Menu {
+        updatedAt = Timestamps.storable(updatedAt);
+    }
 
     public Menu withId(Long newId) {
         return new Menu(newId, parentId, type, name, path, component, title, icon, sort, enabled, keepAlive, hidden,

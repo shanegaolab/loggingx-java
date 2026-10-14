@@ -2,12 +2,13 @@ package com.loggingx.biz.menu;
 
 import com.loggingx.biz.permission.PermissionService;
 import com.loggingx.common.exception.ConflictException;
-import com.loggingx.dao.account.InMemoryUserAccountRepository;
-import com.loggingx.dao.menu.InMemoryMenuRepository;
+import com.loggingx.dao.account.UserAccountRepository;
 import com.loggingx.dao.menu.Menu;
+import com.loggingx.dao.menu.MenuRepository;
 import com.loggingx.dao.menu.MenuType;
-import com.loggingx.dao.role.InMemoryRoleRepository;
+import com.loggingx.dao.role.RoleRepository;
 import com.loggingx.dao.role.Role;
+import com.loggingx.dao.support.TestDatabase;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -18,9 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MenuServiceTest {
 
-    private final InMemoryMenuRepository menuRepository = new InMemoryMenuRepository();
-    private final InMemoryRoleRepository roleRepository = new InMemoryRoleRepository();
-    private final InMemoryUserAccountRepository userAccountRepository = new InMemoryUserAccountRepository();
+    private final TestDatabase database = new TestDatabase();
+    private final MenuRepository menuRepository = database.menuRepository;
+    private final RoleRepository roleRepository = database.roleRepository;
+    private final UserAccountRepository userAccountRepository = database.userAccountRepository;
     private final MenuService service = new MenuService(menuRepository, roleRepository, userAccountRepository,
             new PermissionService(userAccountRepository, roleRepository, menuRepository));
 

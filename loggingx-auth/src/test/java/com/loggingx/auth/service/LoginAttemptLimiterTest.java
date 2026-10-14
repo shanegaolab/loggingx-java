@@ -1,35 +1,33 @@
 package com.loggingx.auth.service;
 
+import com.loggingx.dao.support.TestRedis;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LoginAttemptLimiterTest {
 
-    private Instant now = Instant.parse("2026-10-13T00:00:00Z");
+    /** Short enough to wait out; expiry is Redis' job, so the tests use real time. */
+    private static final Duration LOCK_DURATION = Duration.ofMillis(300);
 
-    private final LoginAttemptLimiter limiter = new LoginAttemptLimiter(new Clock() {
-        @Override
-        public ZoneId getZone() {
-            return ZoneId.of("UTC");
-        }
+    private static final TestRedis REDIS = new TestRedis();
 
-        @Override
-        public Clock withZone(ZoneId zone) {
-            return this;
-        }
+    private final LoginAttemptLimiter limiter = new LoginAttemptLimiter(REDIS.template, LOCK_DURATION);
 
-        @Override
-        public Instant instant() {
-            return now;
-        }
-    });
+    @BeforeEach
+    void clearRedis() {
+        REDIS.flushAll();
+    }
+
+    @AfterAll
+    static void stopRedis() throws Exception {
+        REDIS.close();
+    }
 
     private void fail(int times) {
         for (int i = 0; i < times; i++) {
@@ -37,8 +35,12 @@ class LoginAttemptLimiterTest {
         }
     }
 
+    private static void waitOutLockDuration() throws InterruptedException {
+        Thread.sleep(LOCK_DURATION.plusMillis(100).toMillis());
+    }
+
     @Test
-    void locksAfterMaxFailuresAndUnlocksAfterLockDuration() {
+    void locksAfterMaxFailuresAndUnlocksAfterLockDuration() throws Exception {
         fail(LoginAttemptLimiter.MAX_FAILURES - 1);
         assertFalse(limiter.isLocked("alice"));
 
@@ -46,7 +48,7 @@ class LoginAttemptLimiterTest {
         assertTrue(limiter.isLocked("alice"));
         assertFalse(limiter.isLocked("bob"));
 
-        now = now.plus(LoginAttemptLimiter.LOCK_DURATION);
+        waitOutLockDuration();
         assertFalse(limiter.isLocked("alice"));
         // A fresh window starts, so a single failure does not lock again.
         fail(1);
@@ -54,9 +56,9 @@ class LoginAttemptLimiterTest {
     }
 
     @Test
-    void failuresOutsideTheWindowDoNotAccumulate() {
+    void failuresOutsideTheWindowDoNotAccumulate() throws Exception {
         fail(LoginAttemptLimiter.MAX_FAILURES - 1);
-        now = now.plus(LoginAttemptLimiter.LOCK_DURATION).plus(Duration.ofSeconds(1));
+        waitOutLockDuration();
 
         fail(1);
 

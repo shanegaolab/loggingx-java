@@ -58,6 +58,17 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Integration tests use an in-memory H2 database in MySQL mode, see src/test/resources/config. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Integration tests use an in-process Redis server, see TestRedisConfiguration. -->
+        <dependency>
+            <groupId>com.github.fppt</groupId>
+            <artifactId>jedis-mock</artifactId>
+        </dependency>
     </dependencies>
     <build>
         <!-- Tomcat derives the context path from the file name: loggingx.war is served at /loggingx. -->

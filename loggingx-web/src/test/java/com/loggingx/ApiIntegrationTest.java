@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Base for end-to-end tests against the running server and the {@code dev} demo data.
  * <p>
- * Subclasses share one application context, and so one in-memory store: they must not depend on state that
+ * Subclasses share one application context, and so one database: they must not depend on state that
  * another test changes, such as the {@code user} account's password.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

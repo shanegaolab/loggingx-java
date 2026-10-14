@@ -2,4 +2,4 @@
 loggingx:
   security:
     jwt:
-      secret: ${LOGGINGX_SECURITY_JWT_SECRET:local-development-secret-never-use-in-production}
+      secret: AHK67DSA89UI—12EA-FGQWXJ3689-S6GRYYY789987-SA78QWQ

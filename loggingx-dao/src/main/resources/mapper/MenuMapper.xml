@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.loggingx.dao.menu.MenuMapper">
+
+    <resultMap id="menu" type="com.loggingx.dao.menu.Menu">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="parent_id" javaType="java.lang.Long"/>
+            <arg column="type" javaType="com.loggingx.dao.menu.MenuType"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="path" javaType="java.lang.String"/>
+            <arg column="component" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="icon" javaType="java.lang.String"/>
+            <arg column="sort" javaType="_int"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="keep_alive" javaType="_boolean"/>
+            <arg column="hidden" javaType="_boolean"/>
+            <arg column="hide_tab" javaType="_boolean"/>
+            <arg column="link" javaType="java.lang.String"/>
+            <arg column="iframe" javaType="_boolean"/>
+            <arg column="show_badge" javaType="_boolean"/>
+            <arg column="text_badge" javaType="java.lang.String"/>
+            <arg column="fixed_tab" javaType="_boolean"/>
+            <arg column="active_path" javaType="java.lang.String"/>
+            <arg column="full_page" javaType="_boolean"/>
+            <arg column="auth_mark" javaType="java.lang.String"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        id, parent_id, type, name, path, component, title, icon, sort, enabled, keep_alive, hidden, hide_tab, link,
+        iframe, show_badge, text_badge, fixed_tab, active_path, full_page, auth_mark, updated_at
+    </sql>
+
+    <select id="selectAll" resultMap="menu">
+        SELECT <include refid="columns"/> FROM sys_menu ORDER BY id
+    </select>
+
+    <select id="selectById" resultMap="menu">
+        SELECT <include refid="columns"/> FROM sys_menu WHERE id = #{id}
+        <if test="forUpdate">FOR UPDATE</if>
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO sys_menu (parent_id, type, name, path, component, title, icon, sort, enabled, keep_alive, hidden,
+                              hide_tab, link, iframe, show_badge, text_badge, fixed_tab, active_path, full_page,
+                              auth_mark, updated_at)
+        VALUES (#{menu.parentId}, #{menu.type}, #{menu.name}, #{menu.path}, #{menu.component}, #{menu.title},
+                #{menu.icon}, #{menu.sort}, #{menu.enabled}, #{menu.keepAlive}, #{menu.hidden}, #{menu.hideTab},
+                #{menu.link}, #{menu.iframe}, #{menu.showBadge}, #{menu.textBadge}, #{menu.fixedTab},
+                #{menu.activePath}, #{menu.fullPage}, #{menu.authMark}, #{menu.updatedAt})
+    </insert>
+
+    <update id="update">
+        UPDATE sys_menu
+        SET parent_id   = #{menu.parentId},
+            type        = #{menu.type},
+            name        = #{menu.name},
+            path        = #{menu.path},
+            component   = #{menu.component},
+            title       = #{menu.title},
+            icon        = #{menu.icon},
+            sort        = #{menu.sort},
+            enabled     = #{menu.enabled},
+            keep_alive  = #{menu.keepAlive},
+            hidden      = #{menu.hidden},
+            hide_tab    = #{menu.hideTab},
+            link        = #{menu.link},
+            iframe      = #{menu.iframe},
+            show_badge  = #{menu.showBadge},
+            text_badge  = #{menu.textBadge},
+            fixed_tab   = #{menu.fixedTab},
+            active_path = #{menu.activePath},
+            full_page   = #{menu.fullPage},
+            auth_mark   = #{menu.authMark},
+            updated_at  = #{menu.updatedAt}
+        WHERE id = #{menu.id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM sys_menu WHERE id = #{id}
+    </delete>
+</mapper>

@@ -32,5 +32,16 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.loggingx</groupId>
+            <artifactId>loggingx-dao</artifactId>
+            <type>test-jar</type>
+        </dependency>
+        <!-- TestDatabase from the test-jar runs the repositories on H2. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

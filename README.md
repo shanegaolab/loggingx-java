@@ -7,7 +7,7 @@ LoggingX 是一个基于 Spring Boot 4.1、Spring Security 7 和 Java 25 的智�
 ```text
 loggingx-java
 ├── loggingx-common       # 通用响应模型与应用异常
-├── loggingx-dao          # 数据访问接口及当前内存实现
+├── loggingx-dao          # 数据访问接口及 MySQL（MyBatis）实现
 ├── loggingx-thirdparty   # 外部系统适配器
 ├── loggingx-auth         # 注册、登录、JWT 与安全配置
 ├── loggingx-biz          # 用户及日志分析业务服务
@@ -47,7 +47,13 @@ export LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password
 
 日志输出到 Tomcat 的控制台日志（`logs/catalina.out` 或 `catalina.*.log`）。打包出的 WAR 也可以直接 `java -jar loggingx.war` 用内嵌 Tomcat 运行。
 
-用户、角色、菜单数据由内存仓储保存，服务重启后会丢失；后续接入数据库时，只需要替换 `loggingx-dao` 中各 `*Repository` 的实现。仓储的 `update(expected, updated)` 是比较并交换（CAS）语义，数据库实现可用版本号列实现。
+### 数据库
+
+用户、角色、菜单数据保存在 MySQL（`sys_user`、`sys_role`、`sys_menu` 及关联表 `sys_user_role`、`sys_role_menu`）。连接信息在 `application.yml` 的 `spring.datasource`，可用环境变量 `LOGGINGX_DATASOURCE_URL`、`LOGGINGX_DATASOURCE_USERNAME`、`LOGGINGX_DATASOURCE_PASSWORD` 覆盖。表结构见 `loggingx-dao/src/main/resources/db/schema.sql`，每次启动时执行，只创建缺失的表；修改已有表需要手工迁移。
+
+数据访问使用 MyBatis：每个仓储（如 `MybatisUserAccountRepository`）调用对应的 `*Mapper` 接口，SQL 在 `loggingx-dao/src/main/resources/mapper/*.xml`。连接池为 HikariCP（`spring.datasource.hikari`，默认固定 10 个连接，可用 `LOGGINGX_DATASOURCE_POOL_SIZE` 调整）。时间字段一律按 UTC 存入 `DATETIME(6)`（`UtcInstantTypeHandler`）。
+
+仓储的 `update(expected, updated)` 是比较并交换（CAS）语义：在事务中 `SELECT ... FOR UPDATE` 锁定该行，与 `expected` 比较一致后才写入；唯一约束由数据库保证。测试使用 H2 的 MySQL 兼容模式（`loggingx-web/src/test/resources/config/application.yml`），不会连接 MySQL。
 
 任何环境启动时，若仓储为空，都会写入与前端路由一致的菜单和 R_SUPER / R_ADMIN / R_USER 三个角色（`SystemDataInitializer`）。若没有任何账号持有 R_SUPER，会按下列环境变量创建第一个超级管理员；未设置密码时只打印警告。首次登录后请修改其密码：
 
@@ -64,6 +70,13 @@ LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password  # 需满足密码规则
 | admin | R_ADMIN 管理员 | 仪表盘、用户管理、个人中心、异常页 |
 | user | R_USER 普通用户 | 仪表盘、异常页 |
 
+### Redis
+
+连接信息在 `application.yml` 的 `spring.data.redis`，可用 `LOGGINGX_REDIS_HOST`、`LOGGINGX_REDIS_PORT`、`LOGGINGX_REDIS_PASSWORD`、`LOGGINGX_REDIS_DATABASE` 覆盖。客户端为 Lettuce，所有线程共享一个线程安全的连接，不需要连接池。键统一以 `loggingx:` 开头。用途：
+
+- 登录失败锁定（`LoginAttemptLimiter`）。
+- 缓存角色表和菜单表（`CachingRoleRepository`、`CachingMenuRepository`）：每张表整体缓存为一个 JSON 值（`loggingx:cache:v1:roles` / `menus`），任何写操作后立即清除，有效期 `loggingx.cache.ttl`（默认 10 分钟）。写操作仍直接走数据库并加行锁。Redis 不可用时读操作回落到数据库。缓存的数据结构变化时，把键里的 `v1` 加一。测试使用进程内的 jedis-mock，不会连接 Redis。
+
 ## 接口约定
 
 - 响应统一为 `{"code": 200, "msg": "OK", "data": ...}`；失败时 `code` 为 HTTP 状态码，`msg` 为原因。
@@ -71,7 +84,7 @@ LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password  # 需满足密码规则
 - 认证失败（未登录、token 失效）返回 401，无权限返回 403，响应体同样是上述结构。
 - 用户名去除首尾空格后为 2–50 位、不含空白字符，统一转小写（`UsernamePolicy`）。
 - 密码长度 8–100 位（`PasswordPolicy`），注册、新增用户、修改密码统一校验。
-- 同一用户名 15 分钟内连续登录失败 5 次后锁定 15 分钟，期间登录返回 429（`LoginAttemptLimiter`，仅保存在单实例内存中）。
+- 同一用户名 15 分钟内连续登录失败 5 次后锁定 15 分钟，期间登录返回 429（`LoginAttemptLimiter`，状态存于 Redis，多实例共享；Redis 不可用时放行登录并记录告警）。
 - 管理接口按"角色被分配的菜单"授权：能访问用户管理菜单（User）才能调用用户接口，角色管理（Role）、菜单管理（Menus）同理。
 - 非超级管理员只能授予、管理自己已拥有的权限：分配的角色或菜单，以及被修改的用户或角色当前拥有的权限，都必须是操作人权限的子集，否则返回 403。
 - 编辑时若记录已被他人修改，返回 409，需刷新后重试。

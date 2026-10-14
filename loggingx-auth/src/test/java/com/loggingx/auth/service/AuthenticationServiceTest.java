@@ -8,6 +8,9 @@ import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
 import com.loggingx.dao.role.Role;
 import com.loggingx.dao.role.RoleRepository;
+import com.loggingx.dao.support.TestRedis;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -42,7 +45,19 @@ class AuthenticationServiceTest {
     @Mock
     private JwtTokenService jwtTokenService;
 
-    private final LoginAttemptLimiter loginAttemptLimiter = new LoginAttemptLimiter();
+    private static final TestRedis REDIS = new TestRedis();
+
+    private final LoginAttemptLimiter loginAttemptLimiter = new LoginAttemptLimiter(REDIS.template);
+
+    @BeforeEach
+    void clearRedis() {
+        REDIS.flushAll();
+    }
+
+    @AfterAll
+    static void stopRedis() throws Exception {
+        REDIS.close();
+    }
 
     private AuthenticationService newService() {
         return new AuthenticationService(userAccountRepository, roleRepository, passwordEncoder, jwtTokenService,

@@ -31,6 +31,9 @@
         <java.version>25</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jjwt.version>0.12.6</jjwt.version>
+        <!-- 4.1.x targets Spring Boot 4.1. -->
+        <mybatis-spring-boot.version>4.1.0</mybatis-spring-boot.version>
+        <jedis-mock.version>1.1.19</jedis-mock.version>
     </properties>
 
     <dependencyManagement>
@@ -53,6 +56,18 @@
                 <scope>runtime</scope>
             </dependency>
             <dependency>
+                <groupId>org.mybatis.spring.boot</groupId>
+                <artifactId>mybatis-spring-boot-starter</artifactId>
+                <version>${mybatis-spring-boot.version}</version>
+            </dependency>
+            <!-- In-process Redis server for tests; Docker is not required. -->
+            <dependency>
+                <groupId>com.github.fppt</groupId>
+                <artifactId>jedis-mock</artifactId>
+                <version>${jedis-mock.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>loggingx-common</artifactId>
                 <version>${project.version}</version>
@@ -61,6 +76,13 @@
                 <groupId>${project.groupId}</groupId>
                 <artifactId>loggingx-dao</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>loggingx-dao</artifactId>
+                <version>${project.version}</version>
+                <type>test-jar</type>
+                <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
