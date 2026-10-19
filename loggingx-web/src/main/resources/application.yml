@@ -3,9 +3,9 @@ spring:
     name: loggingx
   datasource:
     # The driver caches prepared statements per connection, which pays off with a pool.
-    url: ${LOGGINGX_DATASOURCE_URL:jdbc:mysql://182.92.9.191:3306/loggingx?characterEncoding=UTF-8&useServerPrepStmts=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048}
+    url: ${LOGGINGX_DATASOURCE_URL:jdbc:mysql://localhost:3306/loggingx?characterEncoding=UTF-8&useServerPrepStmts=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048}
     username: ${LOGGINGX_DATASOURCE_USERNAME:loggingx}
-    password: ${LOGGINGX_DATASOURCE_PASSWORD:xG2cFFHZJjKJ2EjZ}
+    password: ${LOGGINGX_DATASOURCE_PASSWORD:}
     # HikariCP connection pool; times are in milliseconds.
     hikari:
       pool-name: loggingx-pool
@@ -23,9 +23,9 @@ spring:
   # Lettuce shares one thread-safe connection across threads, so no connection pool is configured.
   data:
     redis:
-      host: ${LOGGINGX_REDIS_HOST:182.92.9.191}
-      port: ${LOGGINGX_REDIS_PORT:6380}
-      password: ${LOGGINGX_REDIS_PASSWORD:xG2cFFHZJjKJ2EjZ}
+      host: ${LOGGINGX_REDIS_HOST:localhost}
+      port: ${LOGGINGX_REDIS_PORT:6379}
+      password: ${LOGGINGX_REDIS_PASSWORD:}
       database: ${LOGGINGX_REDIS_DATABASE:0}
       connect-timeout: 3s
       # Keeps a slow or unreachable Redis from stalling logins for long.
@@ -43,14 +43,16 @@ loggingx:
   security:
     jwt:
       # Required: at least 32 bytes. Startup fails if it is not set; the dev profile provides a local value.
-      secret: AHK67DSA89UI—12EA-FGQWXJ3689-S6GRYYY789987-SA78QWQ
+      secret: ${LOGGINGX_JWT_SECRET:local-development-jwt-secret-change-before-production-0123456789}
       expiration: 8h
   bootstrap:
     # When no account holds the super administrator role, one is created with these credentials at startup.
     # The password must satisfy PasswordPolicy; leave it empty to skip (a warning is logged).
     super-admin:
-      username: superuser
-      password: 66688888
+      username: ${LOGGINGX_BOOTSTRAP_ADMIN_USERNAME:superuser}
+      password: ${LOGGINGX_BOOTSTRAP_ADMIN_PASSWORD:}
+api:
+  prefix: /api
 
 management:
   endpoints:

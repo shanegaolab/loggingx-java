@@ -11,6 +11,8 @@ import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
 import com.loggingx.dao.role.Role;
 import com.loggingx.dao.role.RoleRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +23,8 @@ import java.util.UUID;
 
 @Service
 public class AuthenticationService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthenticationService.class);
 
     /** Role granted to self-registered users. */
     public static final String DEFAULT_ROLE_CODE = "R_USER";
@@ -73,12 +77,14 @@ public class AuthenticationService {
                 now,
                 normalizedUsername
         )).orElseThrow(() -> new ConflictException("Username is already registered"));
+        log.info("event=auth.register.success username={} userId={}", account.username(), account.id());
         return issueToken(account);
     }
 
     public AuthToken login(String username, String rawPassword) {
         String normalizedUsername = Usernames.normalize(username);
         if (loginAttemptLimiter.isLocked(normalizedUsername)) {
+            log.warn("event=auth.login.blocked username={} reason=locked", normalizedUsername);
             throw new TooManyRequestsException("Too many failed login attempts; try again later");
         }
         Optional<UserAccount> account = userAccountRepository.findByUsername(normalizedUsername);
@@ -86,12 +92,16 @@ public class AuthenticationService {
         String encodedPassword = account.map(UserAccount::encodedPassword).orElse(dummyEncodedPassword);
         if (!passwordEncoder.matches(rawPassword, encodedPassword) || account.isEmpty()) {
             loginAttemptLimiter.recordFailure(normalizedUsername);
+            log.warn("event=auth.login.failure username={} reason=invalid_credentials", normalizedUsername);
             throw new UnauthorizedException(INVALID_CREDENTIALS);
         }
         loginAttemptLimiter.recordSuccess(normalizedUsername);
         if (account.get().isDeactivated()) {
+            log.warn("event=auth.login.failure username={} userId={} reason=deactivated",
+                    normalizedUsername, account.get().id());
             throw new UnauthorizedException("Account has been deactivated");
         }
+        log.info("event=auth.login.success username={} userId={}", normalizedUsername, account.get().id());
         return issueToken(account.get());
     }
 

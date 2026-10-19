@@ -14,6 +14,8 @@ import com.loggingx.dao.menu.Menu;
 import com.loggingx.dao.menu.MenuRepository;
 import com.loggingx.dao.role.Role;
 import com.loggingx.dao.role.RoleRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -31,6 +33,7 @@ import java.util.stream.Collectors;
 @Service
 public class RoleService {
 
+    private static final Logger log = LoggerFactory.getLogger(RoleService.class);
     private static final String ROLE_NOT_FOUND = "Role was not found";
 
     private final RoleRepository roleRepository;
@@ -69,7 +72,9 @@ public class RoleService {
         Instant now = Instant.now();
         Role role = new Role(null, command.code().trim(), command.name().trim(),
                 trim(command.description()), command.enabled(), Set.of(), now, now);
-        return roleRepository.insert(role).orElseThrow(() -> duplicateCode(role.code()));
+        Role created = roleRepository.insert(role).orElseThrow(() -> duplicateCode(role.code()));
+        log.info("event=role.create.success roleId={} roleCode={}", created.id(), created.code());
+        return created;
     }
 
     public Role update(Long id, RoleCommand command, String operatorUsername) {
@@ -82,6 +87,8 @@ public class RoleService {
         Role updated = new Role(id, code, command.name().trim(), trim(command.description()),
                 command.enabled(), existing.menuIds(), existing.createdAt(), Instant.now());
         Updates.require(roleRepository.update(existing, updated), ROLE_NOT_FOUND, () -> duplicateCode(code));
+        log.info("event=role.update.success operator={} roleId={} roleCode={} enabled={}",
+                operatorUsername, updated.id(), updated.code(), updated.enabled());
         return updated;
     }
 
@@ -103,6 +110,8 @@ public class RoleService {
                         .collect(Collectors.toSet())));
             }
         }
+        log.info("event=role.delete.success operator={} roleId={} roleCode={}",
+                operatorUsername, role.id(), role.code());
     }
 
     /**
@@ -130,6 +139,8 @@ public class RoleService {
         }
         Updates.require(roleRepository.update(role, role.withMenuIds(granted, Instant.now())), ROLE_NOT_FOUND,
                 () -> duplicateCode(role.code()));
+        log.info("event=role.menus.update.success operator={} roleId={} roleCode={} menuCount={}",
+                operatorUsername, role.id(), role.code(), granted.size());
     }
 
     private void requireCanManage(UserAccount operator, Role role) {

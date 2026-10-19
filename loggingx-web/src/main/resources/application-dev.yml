@@ -2,4 +2,4 @@
 loggingx:
   security:
     jwt:
-      secret: AHK67DSA89UI—12EA-FGQWXJ3689-S6GRYYY789987-SA78QWQ
+      secret: ${LOGGINGX_JWT_SECRET:local-development-jwt-secret-change-before-production-0123456789}

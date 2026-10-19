@@ -15,6 +15,8 @@ import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
 import com.loggingx.dao.role.Role;
 import com.loggingx.dao.role.RoleRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +34,7 @@ import java.util.Set;
 @Service
 public class UserService {
 
+    private static final Logger log = LoggerFactory.getLogger(UserService.class);
     private static final String USER_NOT_FOUND = "User account was not found";
 
     private final UserAccountRepository userAccountRepository;
@@ -103,7 +106,10 @@ public class UserService {
                 now,
                 operator.username()
         );
-        return toView(userAccountRepository.insert(account).orElseThrow(() -> duplicateUsername(username)));
+        UserAccount created = userAccountRepository.insert(account).orElseThrow(() -> duplicateUsername(username));
+        log.info("event=user.create.success operator={} targetId={} targetUsername={}",
+                operator.username(), created.id(), created.username());
+        return toView(created);
     }
 
     public UserView update(Long id, UserCommand command, String operatorUsername) {
@@ -159,6 +165,8 @@ public class UserService {
         // Compare-and-set, so a concurrent edit (e.g. one that just revoked tokens) is never silently undone.
         Updates.require(userAccountRepository.update(existing, updated), USER_NOT_FOUND,
                 () -> duplicateUsername(username));
+        log.info("event=user.update.success operator={} targetId={} targetUsername={} passwordChanged={} status={}",
+                operator.username(), updated.id(), updated.username(), passwordChanged, updated.status());
         return toView(updated);
     }
 
@@ -173,6 +181,8 @@ public class UserService {
         }
         requireCanManage(operator, target);
         userAccountRepository.deleteById(id);
+        log.info("event=user.delete.success operator={} targetId={} targetUsername={}",
+                operator.username(), target.id(), target.username());
     }
 
     private UserView toView(UserAccount account) {

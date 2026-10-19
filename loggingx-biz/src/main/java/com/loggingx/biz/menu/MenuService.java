@@ -12,6 +12,8 @@ import com.loggingx.dao.menu.Menu;
 import com.loggingx.dao.menu.MenuRepository;
 import com.loggingx.dao.menu.MenuType;
 import com.loggingx.dao.role.RoleRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -27,6 +29,7 @@ import java.util.stream.Collectors;
 @Service
 public class MenuService {
 
+    private static final Logger log = LoggerFactory.getLogger(MenuService.class);
     /** Component of a top-level directory: the layout that hosts its child pages. */
     public static final String LAYOUT_COMPONENT = "/index/index";
 
@@ -83,7 +86,10 @@ public class MenuService {
             ensureAuthMarkUnique(parentId, command.authMark(), null);
         }
         Menu menu = toMenu(null, parentId, command.type(), command);
-        return menuRepository.insert(menu).orElseThrow(() -> duplicateRouteName(menu.name()));
+        Menu created = menuRepository.insert(menu).orElseThrow(() -> duplicateRouteName(menu.name()));
+        log.info("event=menu.create.success menuId={} type={} name={}",
+                created.id(), created.type(), created.name() == null ? created.title() : created.name());
+        return created;
     }
 
     public Menu update(Long id, MenuCommand command) {
@@ -94,6 +100,8 @@ public class MenuService {
         Menu updated = toMenu(id, existing.parentId(), existing.type(), command);
         Updates.require(menuRepository.update(existing, updated), MENU_NOT_FOUND,
                 () -> duplicateRouteName(updated.name()));
+        log.info("event=menu.update.success menuId={} type={} name={}",
+                updated.id(), updated.type(), updated.name() == null ? updated.title() : updated.name());
         return updated;
     }
 
@@ -114,6 +122,7 @@ public class MenuService {
                                 .filter(menuId -> !removed.contains(menuId))
                                 .collect(Collectors.toSet()),
                         now)));
+        log.info("event=menu.delete.success menuId={} removedCount={}", id, removed.size());
     }
 
     private List<MenuNode> buildTree(List<Menu> menus) {
