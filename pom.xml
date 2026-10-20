@@ -24,6 +24,7 @@
         <module>loggingx-thirdparty</module>
         <module>loggingx-auth</module>
         <module>loggingx-biz</module>
+        <module>loggingx-ai</module>
         <module>loggingx-web</module>
     </modules>
 
@@ -34,10 +35,19 @@
         <!-- 4.1.x targets Spring Boot 4.1. -->
         <mybatis-spring-boot.version>4.1.0</mybatis-spring-boot.version>
         <jedis-mock.version>1.1.19</jedis-mock.version>
+        <!-- 2.0.x targets Spring Boot 4. -->
+        <spring-ai.version>2.0.1</spring-ai.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>io.jsonwebtoken</groupId>
                 <artifactId>jjwt-api</artifactId>
@@ -97,6 +107,11 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>loggingx-biz</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>loggingx-ai</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

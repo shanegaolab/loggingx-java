@@ -19,11 +19,20 @@ public final class OperationAuditInterceptor implements HandlerInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(OperationAuditInterceptor.class);
     private static final String START_TIME_ATTRIBUTE = OperationAuditInterceptor.class.getName() + ".startNanos";
+    private static final String USERNAME_ATTRIBUTE = OperationAuditInterceptor.class.getName() + ".username";
     private static final String ANONYMOUS = "anonymous";
 
+    /**
+     * A streamed response (e.g. {@code /api/ai/chat/stream}) passes through here twice: in the original request and
+     * in the async dispatch that completes it, where the security context is no longer set. The start time and user
+     * are taken from the original request so the single entry logged at completion covers the whole response.
+     */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        request.setAttribute(START_TIME_ATTRIBUTE, System.nanoTime());
+        if (request.getAttribute(START_TIME_ATTRIBUTE) == null) {
+            request.setAttribute(START_TIME_ATTRIBUTE, System.nanoTime());
+            request.setAttribute(USERNAME_ATTRIBUTE, currentUsername());
+        }
         return true;
     }
 
@@ -39,7 +48,7 @@ public final class OperationAuditInterceptor implements HandlerInterceptor {
                 ? TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos)
                 : -1L;
         String handlerName = handler == null ? "unknown" : handler.getClass().getSimpleName();
-        String username = currentUsername();
+        String username = request.getAttribute(USERNAME_ATTRIBUTE) instanceof String name ? name : currentUsername();
         int status = response.getStatus();
 
         if (exception != null || status >= 500) {

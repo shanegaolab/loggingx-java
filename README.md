@@ -11,10 +11,11 @@ loggingx-java
 ├── loggingx-thirdparty   # 外部系统适配器
 ├── loggingx-auth         # 注册、登录、JWT 与安全配置
 ├── loggingx-biz          # 用户及日志分析业务服务
+├── loggingx-ai           # 基于 Spring AI 的大模型对话（OpenAI、Claude、DeepSeek）
 └── loggingx-web          # Spring Boot 启动入口和 HTTP API
 ```
 
-模块依赖方向保持单向：`web -> (auth, biz, thirdparty) -> dao -> common`。
+模块依赖方向保持单向：`web -> (auth, biz, thirdparty, ai) -> dao -> common`，`ai` 只依赖 `common`。
 
 ## 启动
 
@@ -77,6 +78,47 @@ LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password  # 需满足密码规则
 - 登录失败锁定（`LoginAttemptLimiter`）。
 - 缓存角色表和菜单表（`CachingRoleRepository`、`CachingMenuRepository`）：每张表整体缓存为一个 JSON 值（`loggingx:cache:v1:roles` / `menus`），任何写操作后立即清除，有效期 `loggingx.cache.ttl`（默认 10 分钟）。写操作仍直接走数据库并加行锁。Redis 不可用时读操作回落到数据库。缓存的数据结构变化时，把键里的 `v1` 加一。测试使用进程内的 jedis-mock，不会连接 Redis。
 
+### AI 大模型
+
+`loggingx-ai` 基于 Spring AI 2.0 接入 OpenAI、Anthropic Claude 和 DeepSeek。设置了 API Key 的提供方才会启用（`AiConfiguration`），一个都不设也能正常启动，此时 `/api/ai/providers` 返回空列表：
+
+| 提供方 | API Key | 默认模型（`_MODEL` 覆盖） | 默认地址（`_BASE_URL` 覆盖） |
+| --- | --- | --- | --- |
+| `openai` | `LOGGINGX_AI_OPENAI_API_KEY` | `gpt-5-mini` | `https://api.openai.com/v1` |
+| `anthropic` | `LOGGINGX_AI_ANTHROPIC_API_KEY` | `claude-haiku-4-5` | `https://api.anthropic.com` |
+| `deepseek` | `LOGGINGX_AI_DEEPSEEK_API_KEY` | `deepseek-v4-flash` | `https://api.deepseek.com` |
+
+其余参数（温度、超时、重试等）使用 Spring AI 标准属性 `spring.ai.openai.*`、`spring.ai.anthropic.*`、`spring.ai.deepseek.*`。`_BASE_URL` 可指向兼容的网关或中转服务。
+
+OpenAI 和 Anthropic 的 SDK 遵循 JVM 代理设置，在国内访问时需加 `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897`（Tomcat 写在 `setenv` 的 `CATALINA_OPTS`）；DeepSeek 直连即可。注意：OpenAI 会断开来自其不支持地区（含香港）的连接，代理节点需选美国、日本、新加坡等地区。
+
+调用失败（Key 无效、限流、模型不存在、网络错误）返回 502，`msg` 中带有提供方的原始错误信息。联调真实接口可运行默认跳过的 `AiProvidersLiveTest`，它会对每个已设置 Key 的提供方各发一次普通请求和流式请求：
+
+```shell
+LOGGINGX_AI_LIVE=true LOGGINGX_AI_DEEPSEEK_API_KEY=sk-... mvn test -pl loggingx-ai -am -Dsurefire.failIfNoSpecifiedTests=false -Dtest=AiProvidersLiveTest -DargLine="-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897"
+```
+
+#### 流式输出
+
+`POST /api/ai/chat/stream` 的请求体与 `/api/ai/chat` 相同，响应为 `text/event-stream`，模型每生成一段就推送一个事件：
+
+```text
+event:message
+data:{"content":"你"}
+
+event:message
+data:{"content":"好"}
+
+event:done
+data:{"provider":"deepseek","model":"deepseek-v4-flash","content":"你好","promptTokens":7,"completionTokens":1}
+```
+
+- `message`：增量文本；`done`：结束，带完整回答、模型和 token 数（提供方未返回时为 `null`；Spring AI 的 DeepSeek 流式请求不带 `stream_options.include_usage`，token 数可能为 `null`）。
+- 请求无效（未登录、参数校验失败、提供方未配置）时不会开始推送，按普通接口返回 JSON 和对应状态码。
+- 推送开始后状态码已是 200，提供方报错时发送 `event:error`、`data:{"code":502,"msg":"..."}` 后结束，不再发送 `done`。
+- 浏览器 `EventSource` 只支持 GET 且不能带 `Authorization` 头，前端请用 `fetch` 读取响应流（或 `@microsoft/fetch-event-source` 等库）。
+- 单个流最长 5 分钟（`spring.mvc.async.request-timeout`）。经 Nginx 反向代理时需关闭该路径的缓冲（`proxy_buffering off;`），否则事件会被攒到最后一次性返回。
+
 ## 接口约定
 
 - 响应统一为 `{"code": 200, "msg": "OK", "data": ...}`；失败时 `code` 为 HTTP 状态码，`msg` 为原因。
@@ -103,5 +145,8 @@ LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password  # 需满足密码规则
 | GET | `/api/menu/routes` | 当前用户可访问的菜单（前端后端权限模式下生成路由） |
 | GET | `/api/menu/tree` | 完整菜单树（含禁用菜单和全部按钮） |
 | POST / PUT / DELETE | `/api/menu`、`/api/menu/{id}` | 新增 / 编辑 / 删除菜单或按钮（删除菜单会连同子菜单和按钮） |
+| GET | `/api/ai/providers` | 已配置 API Key 的大模型提供方，如 `["openai","deepseek"]` |
+| POST | `/api/ai/chat` | 单轮对话，body: `{"provider","message","systemPrompt?","model?"}`，返回 `{"provider","model","content","promptTokens","completionTokens"}` |
+| POST | `/api/ai/chat/stream` | 流式对话（SSE），body 同上，见上文"流式输出" |
 
 健康检查：`GET /actuator/health`

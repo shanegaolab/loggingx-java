@@ -2,6 +2,7 @@ package com.loggingx.auth.config;
 
 import com.loggingx.auth.security.ApiErrorResponder;
 import com.loggingx.auth.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,6 +31,9 @@ public class SecurityConfiguration {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
+                        // A streamed response (e.g. /api/ai/chat/stream) is written in an async dispatch of a request
+                        // already authorized above; JwtAuthenticationFilter does not run again for it.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/api/auth/**", "/actuator/health").permitAll()
                         .anyRequest().authenticated())
                 // Without basic/form login there is no entry point, and Spring would answer 403 instead of 401.

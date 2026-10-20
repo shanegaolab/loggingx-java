@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -114,6 +115,7 @@ public class GlobalExceptionHandler {
             case FORBIDDEN -> HttpStatus.FORBIDDEN;
             case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
             case TOO_MANY_REQUESTS -> HttpStatus.TOO_MANY_REQUESTS;
+            case BAD_GATEWAY -> HttpStatus.BAD_GATEWAY;
             case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
     }
@@ -122,8 +124,14 @@ public class GlobalExceptionHandler {
         return response(HttpStatus.BAD_REQUEST, message);
     }
 
+    /**
+     * The content type is set explicitly so the envelope is written as JSON even when the request only accepts
+     * another type, such as {@code text/event-stream} for {@code /api/ai/chat/stream}.
+     */
     private ResponseEntity<ApiResponse<Void>> response(HttpStatusCode status, String message) {
         String msg = message == null || message.isBlank() ? "Request could not be processed" : message;
-        return ResponseEntity.status(status).body(ApiResponse.failure(status.value(), msg));
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(ApiResponse.failure(status.value(), msg));
     }
 }

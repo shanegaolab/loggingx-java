@@ -1,6 +1,50 @@
 spring:
   application:
     name: loggingx
+  # Spring AI's chat auto-configurations register every provider even without an API key;
+  # AiConfiguration (loggingx-ai) imports them only for the providers whose key is set.
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
+      - org.springframework.ai.model.anthropic.autoconfigure.AnthropicChatAutoConfiguration
+      - org.springframework.ai.model.deepseek.autoconfigure.DeepSeekChatAutoConfiguration
+  mvc:
+    async:
+      # Bounds streamed responses (/api/ai/chat/stream); long model answers outlast the container's 30 s default.
+      request-timeout: 5m
+  ai:
+    # Only chat is used: turn off the OpenAI starter's other models, and the ChatClient.Builder bean,
+    # which needs exactly one ChatModel (AiChatService builds one ChatClient per provider instead).
+    model:
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none
+    chat:
+      client:
+        enabled: false
+    # A provider is enabled when its API key is set. Base URLs are set explicitly so the SDKs do not pick up
+    # OPENAI_BASE_URL / ANTHROPIC_BASE_URL from the environment; point them at a compatible gateway if needed.
+    openai:
+      api-key: ${LOGGINGX_AI_OPENAI_API_KEY:}
+      base-url: ${LOGGINGX_AI_OPENAI_BASE_URL:https://api.openai.com/v1}
+      chat:
+        options:
+          model: ${LOGGINGX_AI_OPENAI_MODEL:gpt-5-mini}
+    anthropic:
+      api-key: ${LOGGINGX_AI_ANTHROPIC_API_KEY:}
+      base-url: ${LOGGINGX_AI_ANTHROPIC_BASE_URL:https://api.anthropic.com}
+      chat:
+        options:
+          model: ${LOGGINGX_AI_ANTHROPIC_MODEL:claude-haiku-4-5}
+    deepseek:
+      api-key: ${LOGGINGX_AI_DEEPSEEK_API_KEY:}
+      base-url: ${LOGGINGX_AI_DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: ${LOGGINGX_AI_DEEPSEEK_MODEL:deepseek-v4-flash}
   datasource:
     # The driver caches prepared statements per connection, which pays off with a pool.
     url: ${LOGGINGX_DATASOURCE_URL:jdbc:mysql://localhost:3306/loggingx?characterEncoding=UTF-8&useServerPrepStmts=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048}

@@ -33,9 +33,15 @@ abstract class ApiIntegrationTest {
     private Environment environment;
 
     protected HttpResponse<String> send(String method, String path, String token, String body) throws Exception {
+        return send(method, path, token, body, "*/*");
+    }
+
+    protected HttpResponse<String> send(String method, String path, String token, String body, String accept)
+            throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(
-                        URI.create("http://localhost:" + environment.getProperty("local.server.port") + path))
+                        uri(path))
                 .header("Content-Type", "application/json")
+                .header("Accept", accept)
                 .method(method, body == null
                         ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofString(body));
@@ -43,6 +49,10 @@ abstract class ApiIntegrationTest {
             request.header("Authorization", "Bearer " + token);
         }
         return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    protected URI uri(String path) {
+        return URI.create("http://localhost:" + environment.getProperty("local.server.port") + path);
     }
 
     protected HttpResponse<String> attemptLogin(String username, String password) throws Exception {

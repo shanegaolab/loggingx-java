@@ -7,5 +7,6 @@ public enum ErrorCode {
     FORBIDDEN,
     VALIDATION_FAILED,
     TOO_MANY_REQUESTS,
+    BAD_GATEWAY,
     INTERNAL_ERROR
 }
