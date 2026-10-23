@@ -77,3 +77,32 @@ CREATE TABLE IF NOT EXISTS sys_role_menu (
     KEY idx_sys_role_menu_menu (menu_id),
     CONSTRAINT fk_sys_role_menu_role FOREIGN KEY (role_id) REFERENCES sys_role (id) ON DELETE CASCADE
 ) ENGINE = InnoDB;
+
+-- Departments form a tree through parent_id (0 for top-level ones); sibling departments have distinct names.
+CREATE TABLE IF NOT EXISTS sys_dept (
+    id         BIGINT       NOT NULL AUTO_INCREMENT,
+    parent_id  BIGINT       NOT NULL DEFAULT 0,
+    name       VARCHAR(64)  NOT NULL,
+    sort       INT          NOT NULL DEFAULT 0,
+    leader     VARCHAR(64),
+    phone      VARCHAR(32),
+    email      VARCHAR(255),
+    enabled    BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at DATETIME(6),
+    updated_at DATETIME(6),
+    PRIMARY KEY (id),
+    CONSTRAINT uk_sys_dept_parent_name UNIQUE (parent_id, name)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS sys_post (
+    id         BIGINT       NOT NULL AUTO_INCREMENT,
+    code       VARCHAR(64)  NOT NULL,
+    name       VARCHAR(64)  NOT NULL,
+    sort       INT          NOT NULL DEFAULT 0,
+    enabled    BOOLEAN      NOT NULL DEFAULT TRUE,
+    remark     VARCHAR(255),
+    created_at DATETIME(6),
+    updated_at DATETIME(6),
+    PRIMARY KEY (id),
+    CONSTRAINT uk_sys_post_code UNIQUE (code)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_bin;

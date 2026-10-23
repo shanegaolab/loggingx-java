@@ -27,6 +27,10 @@ loggingx-java
 mvn spring-boot:run -pl loggingx-web -am -Dspring-boot.run.profiles=dev
 ```
 
+### 环境变量
+
+可覆盖的配置均以 `LOGGINGX_` 开头，完整列表及默认值见 [`.env.example`](.env.example)。除系统环境变量外，也可把它复制为启动工作目录下的 `.env`（已被 git 忽略），取消注释并填写需要的项；同名系统环境变量优先。`.env` 按 Java properties 格式读取：值不加引号，未注释的空值会覆盖默认值。
+
 ### 部署到外部 Tomcat
 
 `loggingx-web` 打包为 WAR，Tomcat 相关依赖为 `provided`，不会与容器自带的 Tomcat 冲突：
@@ -42,25 +46,25 @@ mvn clean package
 - 不激活 `dev` profile，因此必须提供 JWT 密钥（至少 32 字节），否则应用启动失败；首次部署时一并设置超级管理员密码（见下文）。可写在 `$CATALINA_HOME/bin/setenv.sh`（Windows 为 `setenv.bat`，用 `set NAME=value`）：
 
 ```shell
-export LOGGINGX_SECURITY_JWT_SECRET=your-long-random-secret
-export LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password
+export LOGGINGX_JWT_SECRET=your-long-random-secret
+export LOGGINGX_BOOTSTRAP_ADMIN_PASSWORD=your-password
 ```
 
 日志输出到 Tomcat 的控制台日志（`logs/catalina.out` 或 `catalina.*.log`）。打包出的 WAR 也可以直接 `java -jar loggingx.war` 用内嵌 Tomcat 运行。
 
 ### 数据库
 
-用户、角色、菜单数据保存在 MySQL（`sys_user`、`sys_role`、`sys_menu` 及关联表 `sys_user_role`、`sys_role_menu`）。连接信息在 `application.yml` 的 `spring.datasource`，可用环境变量 `LOGGINGX_DATASOURCE_URL`、`LOGGINGX_DATASOURCE_USERNAME`、`LOGGINGX_DATASOURCE_PASSWORD` 覆盖。表结构见 `loggingx-dao/src/main/resources/db/schema.sql`，每次启动时执行，只创建缺失的表；修改已有表需要手工迁移。
+用户、角色、菜单、部门、岗位数据保存在 MySQL（`sys_user`、`sys_role`、`sys_menu`、`sys_dept`、`sys_post` 及关联表 `sys_user_role`、`sys_role_menu`）。连接信息在 `application.yml` 的 `spring.datasource`，可用环境变量 `LOGGINGX_DATASOURCE_URL`、`LOGGINGX_DATASOURCE_USERNAME`、`LOGGINGX_DATASOURCE_PASSWORD` 覆盖。表结构见 `loggingx-dao/src/main/resources/db/schema.sql`，每次启动时执行，只创建缺失的表；修改已有表需要手工迁移。
 
 数据访问使用 MyBatis：每个仓储（如 `MybatisUserAccountRepository`）调用对应的 `*Mapper` 接口，SQL 在 `loggingx-dao/src/main/resources/mapper/*.xml`。连接池为 HikariCP（`spring.datasource.hikari`，默认固定 10 个连接，可用 `LOGGINGX_DATASOURCE_POOL_SIZE` 调整）。时间字段一律按 UTC 存入 `DATETIME(6)`（`UtcInstantTypeHandler`）。
 
 仓储的 `update(expected, updated)` 是比较并交换（CAS）语义：在事务中 `SELECT ... FOR UPDATE` 锁定该行，与 `expected` 比较一致后才写入；唯一约束由数据库保证。测试使用 H2 的 MySQL 兼容模式（`loggingx-web/src/test/resources/config/application.yml`），不会连接 MySQL。
 
-任何环境启动时，若仓储为空，都会写入与前端路由一致的菜单和 R_SUPER / R_ADMIN / R_USER 三个角色（`SystemDataInitializer`）。若没有任何账号持有 R_SUPER，会按下列环境变量创建第一个超级管理员；未设置密码时只打印警告。首次登录后请修改其密码：
+任何环境启动时，若仓储为空，都会写入与前端路由一致的菜单和 R_SUPER / R_ADMIN / R_USER 三个角色（`SystemDataInitializer`）。已有数据库启动时，若「系统管理」下缺少部门管理（`Dept`）或岗位管理（`Post`）菜单会自动补上，补上的菜单默认只有超级管理员可见，需要在角色管理中授权给其他角色。`dev` profile 下还会在部门、岗位为空时写入演示数据。若没有任何账号持有 R_SUPER，会按下列环境变量创建第一个超级管理员；未设置密码时只打印警告。首次登录后请修改其密码：
 
 ```shell
-LOGGINGX_BOOTSTRAP_SUPER_ADMIN_USERNAME=super          # 可选，默认 super
-LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password  # 需满足密码规则
+LOGGINGX_BOOTSTRAP_ADMIN_USERNAME=superuser    # 可选，默认 superuser
+LOGGINGX_BOOTSTRAP_ADMIN_PASSWORD=your-password  # 需满足密码规则
 ```
 
 `dev` profile 下另外写入三个演示账号（密码均为 `123456`，仅用于演示，不受下文密码规则约束）：
@@ -68,7 +72,7 @@ LOGGINGX_BOOTSTRAP_SUPER_ADMIN_PASSWORD=your-password  # 需满足密码规则
 | 账号 | 角色 | 可访问菜单 |
 | --- | --- | --- |
 | super | R_SUPER 超级管理员 | 全部（该角色始终拥有全部菜单，不可删除或禁用） |
-| admin | R_ADMIN 管理员 | 仪表盘、用户管理、个人中心、异常页 |
+| admin | R_ADMIN 管理员 | 仪表盘、用户管理、部门管理、岗位管理、个人中心、异常页 |
 | user | R_USER 普通用户 | 仪表盘、异常页 |
 
 ### Redis
@@ -127,7 +131,7 @@ data:{"provider":"deepseek","model":"deepseek-v4-flash","content":"你好","prom
 - 用户名去除首尾空格后为 2–50 位、不含空白字符，统一转小写（`UsernamePolicy`）。
 - 密码长度 8–100 位（`PasswordPolicy`），注册、新增用户、修改密码统一校验。
 - 同一用户名 15 分钟内连续登录失败 5 次后锁定 15 分钟，期间登录返回 429（`LoginAttemptLimiter`，状态存于 Redis，多实例共享；Redis 不可用时放行登录并记录告警）。
-- 管理接口按"角色被分配的菜单"授权：能访问用户管理菜单（User）才能调用用户接口，角色管理（Role）、菜单管理（Menus）同理。
+- 管理接口按"角色被分配的菜单"授权：能访问用户管理菜单（User）才能调用用户接口，角色管理（Role）、菜单管理（Menus）、部门管理（Dept）、岗位管理（Post）同理。
 - 非超级管理员只能授予、管理自己已拥有的权限：分配的角色或菜单，以及被修改的用户或角色当前拥有的权限，都必须是操作人权限的子集，否则返回 403。
 - 编辑时若记录已被他人修改，返回 409，需刷新后重试。
 
@@ -145,6 +149,10 @@ data:{"provider":"deepseek","model":"deepseek-v4-flash","content":"你好","prom
 | GET | `/api/menu/routes` | 当前用户可访问的菜单（前端后端权限模式下生成路由） |
 | GET | `/api/menu/tree` | 完整菜单树（含禁用菜单和全部按钮） |
 | POST / PUT / DELETE | `/api/menu`、`/api/menu/{id}` | 新增 / 编辑 / 删除菜单或按钮（删除菜单会连同子菜单和按钮） |
+| GET | `/api/dept/tree` | 部门树，参数 `deptName,enabled`；筛选时保留匹配部门的上级部门 |
+| POST / PUT / DELETE | `/api/dept`、`/api/dept/{id}` | 新增 / 编辑 / 删除部门（同一上级下名称唯一；有下级部门时不能删除；不能移到自身或下级之下） |
+| GET | `/api/post/list` | 岗位分页，参数 `current,size,postCode,postName,enabled` |
+| POST / PUT / DELETE | `/api/post`、`/api/post/{id}` | 新增 / 编辑 / 删除岗位（岗位编码唯一） |
 | GET | `/api/ai/providers` | 已配置 API Key 的大模型提供方，如 `["openai","deepseek"]` |
 | POST | `/api/ai/chat` | 单轮对话，body: `{"provider","message","systemPrompt?","model?"}`，返回 `{"provider","model","content","promptTokens","completionTokens"}` |
 | POST | `/api/ai/chat/stream` | 流式对话（SSE），body 同上，见上文"流式输出" |

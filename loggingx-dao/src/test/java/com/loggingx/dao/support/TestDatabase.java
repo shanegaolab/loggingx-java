@@ -2,8 +2,12 @@ package com.loggingx.dao.support;
 
 import com.loggingx.dao.account.MybatisUserAccountRepository;
 import com.loggingx.dao.account.UserAccountMapper;
+import com.loggingx.dao.dept.DeptMapper;
+import com.loggingx.dao.dept.MybatisDeptRepository;
 import com.loggingx.dao.menu.MenuMapper;
 import com.loggingx.dao.menu.MybatisMenuRepository;
+import com.loggingx.dao.post.MybatisPostRepository;
+import com.loggingx.dao.post.PostMapper;
 import com.loggingx.dao.role.MybatisRoleRepository;
 import com.loggingx.dao.role.RoleMapper;
 import org.mybatis.spring.SqlSessionFactoryBean;
@@ -25,6 +29,8 @@ public final class TestDatabase {
     public final MybatisUserAccountRepository userAccountRepository;
     public final MybatisRoleRepository roleRepository;
     public final MybatisMenuRepository menuRepository;
+    public final MybatisDeptRepository deptRepository;
+    public final MybatisPostRepository postRepository;
 
     public TestDatabase() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
@@ -49,5 +55,7 @@ public final class TestDatabase {
                 transactionManager);
         roleRepository = new MybatisRoleRepository(session.getMapper(RoleMapper.class), transactionManager);
         menuRepository = new MybatisMenuRepository(session.getMapper(MenuMapper.class), transactionManager);
+        deptRepository = new MybatisDeptRepository(session.getMapper(DeptMapper.class), transactionManager);
+        postRepository = new MybatisPostRepository(session.getMapper(PostMapper.class), transactionManager);
     }
 }

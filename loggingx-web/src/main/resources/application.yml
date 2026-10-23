@@ -1,6 +1,10 @@
 spring:
   application:
     name: loggingx
+  # Local overrides for the LOGGINGX_* placeholders below, read from .env in the working directory
+  # (see .env.example). Real environment variables take precedence.
+  config:
+    import: optional:file:.env[.properties]
   # Spring AI's chat auto-configurations register every provider even without an API key;
   # AiConfiguration (loggingx-ai) imports them only for the providers whose key is set.
   autoconfigure:

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.loggingx.dao.dept.DeptMapper">
+
+    <resultMap id="dept" type="com.loggingx.dao.dept.Dept">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="parent_id" javaType="java.lang.Long"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="sort" javaType="_int"/>
+            <arg column="leader" javaType="java.lang.String"/>
+            <arg column="phone" javaType="java.lang.String"/>
+            <arg column="email" javaType="java.lang.String"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        id, parent_id, name, sort, leader, phone, email, enabled, created_at, updated_at
+    </sql>
+
+    <select id="selectAll" resultMap="dept">
+        SELECT <include refid="columns"/> FROM sys_dept ORDER BY id
+    </select>
+
+    <select id="selectById" resultMap="dept">
+        SELECT <include refid="columns"/> FROM sys_dept WHERE id = #{id}
+        <if test="forUpdate">FOR UPDATE</if>
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO sys_dept (parent_id, name, sort, leader, phone, email, enabled, created_at, updated_at)
+        VALUES (#{dept.parentId}, #{dept.name}, #{dept.sort}, #{dept.leader}, #{dept.phone}, #{dept.email},
+                #{dept.enabled}, #{dept.createdAt}, #{dept.updatedAt})
+    </insert>
+
+    <update id="update">
+        UPDATE sys_dept
+        SET parent_id  = #{dept.parentId},
+            name       = #{dept.name},
+            sort       = #{dept.sort},
+            leader     = #{dept.leader},
+            phone      = #{dept.phone},
+            email      = #{dept.email},
+            enabled    = #{dept.enabled},
+            created_at = #{dept.createdAt},
+            updated_at = #{dept.updatedAt}
+        WHERE id = #{dept.id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM sys_dept WHERE id = #{id}
+    </delete>
+</mapper>
