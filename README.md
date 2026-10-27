@@ -27,6 +27,13 @@ loggingx-java
 mvn spring-boot:run -pl loggingx-web -am -Dspring-boot.run.profiles=dev
 ```
 
+不连接 MySQL、Redis、ClickHouse 也能本地跑起来：`TestLoggingxApplication` 使用测试环境的配置（内存 H2、进程内 Redis、内存日志存储，见 `loggingx-web/src/test/resources/config`），数据在退出后丢失，适合前后端联调：
+
+```shell
+mvn -pl loggingx-web -am install -DskipTests
+mvn -pl loggingx-web spring-boot:test-run -Dspring-boot.run.profiles=dev
+```
+
 ### 环境变量
 
 可覆盖的配置均以 `LOGGINGX_` 开头，完整列表及默认值见 [`.env.example`](.env.example)。除系统环境变量外，也可把它复制为启动工作目录下的 `.env`（已被 git 忽略），取消注释并填写需要的项；同名系统环境变量优先。`.env` 按 Java properties 格式读取：值不加引号，未注释的空值会覆盖默认值。
@@ -82,6 +89,75 @@ LOGGINGX_BOOTSTRAP_ADMIN_PASSWORD=your-password  # 需满足密码规则
 - 登录失败锁定（`LoginAttemptLimiter`）。
 - 缓存角色表和菜单表（`CachingRoleRepository`、`CachingMenuRepository`）：每张表整体缓存为一个 JSON 值（`loggingx:cache:v1:roles` / `menus`），任何写操作后立即清除，有效期 `loggingx.cache.ttl`（默认 10 分钟）。写操作仍直接走数据库并加行锁。Redis 不可用时读操作回落到数据库。缓存的数据结构变化时，把键里的 `v1` 加一。测试使用进程内的 jedis-mock，不会连接 Redis。
 
+### 日志管理
+
+日志库（`log_store`）保存在 MySQL；日志明细保存在 ClickHouse，由 `loggingx.log.storage` 选择存储：
+
+| 取值 | 存储 | 用途 |
+| --- | --- | --- |
+| `clickhouse`（默认） | ClickHouse 的 `log_record` 表（`ClickHouseLogRecordRepository`） | 生产 |
+| `memory` | 进程内存，每个日志库最多保留 `loggingx.log.memory.capacity-per-store` 条，重启丢失 | 测试、没有 ClickHouse 时本地运行 |
+
+ClickHouse 连接用 `LOGGINGX_CLICKHOUSE_URL`（默认 `jdbc:clickhouse://localhost:8123/loggingx`）、`LOGGINGX_CLICKHOUSE_USERNAME`、`LOGGINGX_CLICKHOUSE_PASSWORD` 配置。数据库需事先创建（`CREATE DATABASE loggingx`），表结构见 `loggingx-dao/src/main/resources/db/clickhouse-schema.sql`，启动时自动创建。ClickHouse 不可用时应用照常启动，只有日志相关接口报错，恢复后需重启以建表。表设计：
+
+- `MergeTree`，按天分区，按 `(store_id, log_time, seq, id)` 排序，查询都按日志库和时间范围过滤。
+- 每行带写入时日志库的保留天数，过期数据由 TTL 在合并时删除；每天 03:30 的 `LogRetentionService` 再按当前保留天数补删（保留天数被改小时），并清理已删除日志库残留的日志。删除日志库时立即删除其日志（ClickHouse 轻量删除）。
+- 日志 ID 由应用按接收时间生成（`LogIds`，类似雪花算法），实时日志按 ID 跟随。
+- 关键字查询为不区分大小写的子串匹配（`ILIKE`），不走索引，需配合日志库和时间范围；TraceId 有 bloom filter 索引。
+
+用真实 ClickHouse 验证仓储的 SQL，可运行默认跳过的 `ClickHouseLogRecordRepositoryLiveTest`（写入随机日志库 ID，结束后删除）：
+
+```shell
+LOGGINGX_TEST_CLICKHOUSE_URL=jdbc:clickhouse://host:8123/loggingx LOGGINGX_TEST_CLICKHOUSE_PASSWORD=... mvn test -pl loggingx-dao -am -Dsurefire.failIfNoSpecifiedTests=false -Dtest=ClickHouseLogRecordRepositoryLiveTest
+```
+
+#### 日志上报
+
+采集服务器上的日志文件或容器日志，推荐在「日志管理 → 采集 Agent」页面一键部署 Vector Agent（Linux / Docker / Kubernetes / Windows），采集内容由日志库的采集配置决定；安装后的 Agent 登记到日志库、定期同步，配置修改和 Token 重置会自动下发，日志库管理中可看到每个日志库的 Agent 及在线状态。选型、生成的配置、联动和运维说明见 [docs/agent.md](docs/agent.md)。相关接口：
+- `/api/agent/config`、`/api/agent/install.sh`、`/api/agent/install.ps1`、`/api/agent/kubernetes.yaml`：请求头带日志库的上报 Token，或以日志库管理员身份带 `storeId` 访问。
+- `GET`/`PUT /api/agent/collect?storeId=`（采集配置）、`GET /api/agent/agents`、`DELETE /api/agent/agents/{id}`：日志库管理员访问。
+- `GET`/`DELETE /api/agent/sync`：Agent 同步与注销，凭请求头 `X-Agent-Id`、`X-Agent-Secret` 访问（首次带 `X-Log-Token` 登记）。
+- `/api/agent/download/<安装包>`：公开。
+
+**日志备份**：开启归档的日志库，每天把超过 N 天的日志按天压缩为 `.ndjson.gz` 上传到 S3 兼容对象存储（MinIO / OSS / COS / S3），归档按保留天数自动清理；**先归档、再删除**：未归档成功的日期不会被保留清理删除。归档可下载或恢复回日志库查询，详见 [docs/backup.md](docs/backup.md)。相关接口（一级菜单「备份管理」）：`/api/backup/storage`（配置与测试连接）、`/api/backup/policies`、`/api/backup/archives`（含 `/{id}/restore`、`/{id}/download-link`）、`POST /api/backup/run`、`GET /api/backup/status`；`GET /api/backup/download/<签名>` 凭 10 分钟有效的签名下载。新建 / 编辑日志库时可带 `backup` 一起设置归档，`DELETE /api/logstore/{id}?deleteArchives=true` 同时删除归档。
+
+**主机监控**：Agent 同时采集所在主机的 CPU、内存、磁盘、网络、负载、进程 Top 和容器资源（在采集配置中开关），「监控中心」提供主机列表、趋势图、阈值告警（规则与通知在一级菜单「告警中心」），并与日志查询互相跳转，详见 [docs/agent.md#主机监控](docs/agent.md#主机监控)。相关接口：
+- `POST /api/metrics/ingest`：Agent 上报指标（Vector `host_metrics` 经 `metric_to_log` 后的 JSON，可 gzip），凭 `X-Log-Token`。
+- `GET /api/monitor/hosts`、`/api/monitor/hosts/series`、`/filesystems`、`/processes`、`/containers`、`/api/monitor/alerts`：「主机监控」或「告警中心」菜单可访问。
+- `/api/monitor/alert-rules`：查看同上；增删改需「告警中心」菜单。
+
+**告警与通知**：「告警中心」（一级菜单）分为**日志告警**（时间窗口内匹配级别 / 关键字的日志条数超过阈值）和**监控告警**（主机资源阈值、Agent 离线），每条规则可选择**邮件**（SMTP）和/或**短信**（阿里云或腾讯云，页面中选择）通知系统用户与通知组，支持恢复通知、重复提醒、测试发送和通知记录。SMTP 密码与短信密钥加密存库。详见 [docs/alerting.md](docs/alerting.md)；接口为 `/api/alert-center/*`（需「告警中心」菜单）。
+
+两种方式，消息格式相同（`LogPayloads`）：请求体为日志数组、`{"logstore": "<编码>", "logs": [...]}` 或单条日志。单条日志是扁平 JSON 对象：
+
+| 字段 | 说明 |
+| --- | --- |
+| `message` / `msg` / `log` | 日志内容，必填，为空的被丢弃；超过 16000 字符截断 |
+| `time` / `timestamp` / `@timestamp` | ISO-8601、`yyyy-MM-dd HH:mm:ss[.SSS]`（服务器时区）或秒/毫秒时间戳；缺省或无法解析时为接收时间 |
+| `level` / `severity` | TRACE、DEBUG、INFO、WARN、ERROR、FATAL，接受 warning、err、critical 等写法；缺省或无法识别时为 INFO |
+| `host` / `hostname`、`source` / `logger` / `file`、`traceId` / `trace_id` | 主机、来源、链路 ID（Filebeat 的 `host.name`、`log.file.path` 也能识别） |
+| `seq` / `sequence` / `offset` | 行在来源中的序号，如文件偏移（Filebeat 的 `log.offset` 也能识别），同一时间的日志按它排序，见下文「日志顺序」 |
+| `fields` 及其他字段 | 作为附加字段（JSON）保存 |
+
+- **HTTP**：`POST /api/logs/ingest`，请求头 `X-Log-Token` 为日志库的上报 Token（日志库管理页可复制、重置），不需要登录。请求体也可以是每行一个 JSON 的 NDJSON（如 Fluent Bit 的 `json_lines`）。每次最多 1000 条，返回 `{"accepted": n, "rejected": n}`。Token 错误返回 401，日志库停用返回 403。该接口不记录操作审计日志。
+- **Kafka**：采集 Agent 把日志发到 Kafka，后端批量消费（`KafkaLogListener`）。设置 `LOGGINGX_KAFKA_ENABLED=true` 开启，`LOGGINGX_KAFKA_BOOTSTRAP_SERVERS`（默认 `localhost:9092`）、`LOGGINGX_KAFKA_TOPICS`（逗号分隔，默认 `loggingx-logs`）、`LOGGINGX_KAFKA_GROUP_ID`（默认 `loggingx`）配置连接；新消费组从最新消息开始（`LOGGINGX_KAFKA_AUTO_OFFSET_RESET`）。依次用消息体的 `logstore` 字段、`logstore` 消息头或消息 Key 指定日志库编码，不需要 Token。格式错误、日志库不存在或停用的消息记录告警后跳过，存储失败时整批重试。其余参数用 Spring Boot 标准属性 `spring.kafka.*`。
+
+#### 日志顺序
+
+查询和实时日志都按「日志时间 → 行序号 `seq` → 接收顺序（ID）」排序（`LogRecord.ORDER`）。同一时间戳下常有多行日志（异常堆栈、秒级精度的时间戳），它们的先后由后两者决定：
+
+- **接收顺序**：同一请求、同一 Kafka 分区内的日志按发送顺序分配 ID，消费者按分区内偏移顺序处理，因此同一分区内的顺序不会被打乱。
+- **跨分区**：Kafka 只保证分区内有序。同一来源的日志应发到同一分区：消息 Key 设为「主机:文件路径」之类的来源标识，日志库放在 `logstore` 消息头或消息体中（不要用日志库编码做 Key，否则一个日志库只能用一个分区）。
+- **行序号**：采集端带上 `seq`（或 Filebeat 自带的 `log.offset`）后，即使同一来源的日志被分到不同分区、或重试后乱序到达，同一时间的日志仍按原始顺序排列。未提供时为 0，此时只能依赖接收顺序。
+- **实时日志**按到达顺序追加；每批（约 1 秒）内按上述顺序排列，晚到的旧日志排在已显示的日志之后。需要严格按时间看时用日志查询。
+- 已经建好 `log_record` 表的 ClickHouse 需要删表重建才会有 `seq` 列（表结构改了排序键）。
+
+#### 查询与实时日志
+
+- `GET /api/logs/search?storeId=&startTime=&endTime=&levels=ERROR,WARN&keyword=&host=&traceId=&current=&size=`：按日志时间倒序分页，`levelCounts` 为各级别命中数（不受级别筛选影响）。最多翻到前 10000 条，再往后需缩小时间范围。日志 `id` 以字符串返回（超出 JS 安全整数）。
+- `GET /api/logs/tail?storeId=&levels=&keyword=`：`text/event-stream`，先推送最近 100 条，随后每秒推送新日志。`logs` 事件为日志数组，`ready` 表示最近日志已发送完，无新日志时每 15 秒发送注释心跳；连接 30 分钟后由服务端关闭，前端自动重连。按 ID 轮询存储，多实例部署、Kafka 由其他节点消费都能看到；只推送 2 秒前接收的日志（`loggingx.log.tail.settle-delay`），给其他节点进行中的写入留出时间。经 Nginx 时同样需要 `proxy_buffering off;`。
+- 权限按菜单：日志库管理（`LogStore`，含 Token）、日志查询（`LogQuery`）、实时日志（`LogTail`）；日志库下拉选项 `/api/logstore/options` 不含 Token，三者任一即可访问。新库中管理员拥有全部日志菜单，普通用户拥有查询和实时日志；已有数据库启动时自动补上这些菜单，默认只有超级管理员可见。`dev` profile 下没有日志库时创建演示日志库 `demo-app`，日志库为空时写入 60 条示例日志。
+
 ### AI 大模型
 
 `loggingx-ai` 基于 Spring AI 2.0 接入 OpenAI、Anthropic Claude 和 DeepSeek。设置了 API Key 的提供方才会启用（`AiConfiguration`），一个都不设也能正常启动，此时 `/api/ai/providers` 返回空列表：
@@ -126,7 +202,7 @@ data:{"provider":"deepseek","model":"deepseek-v4-flash","content":"你好","prom
 ## 接口约定
 
 - 响应统一为 `{"code": 200, "msg": "OK", "data": ...}`；失败时 `code` 为 HTTP 状态码，`msg` 为原因。
-- 除 `/api/auth/**` 外均需携带 `Authorization: Bearer <token>`。token 绑定用户 ID；修改密码或停用账号后，该用户已签发的 token 立即失效。
+- 除 `/api/auth/**` 和日志上报接口 `/api/logs/ingest`（使用日志库的上报 Token）外均需携带 `Authorization: Bearer <token>`。token 绑定用户 ID；修改密码或停用账号后，该用户已签发的 token 立即失效。
 - 认证失败（未登录、token 失效）返回 401，无权限返回 403，响应体同样是上述结构。
 - 用户名去除首尾空格后为 2–50 位、不含空白字符，统一转小写（`UsernamePolicy`）。
 - 密码长度 8–100 位（`PasswordPolicy`），注册、新增用户、修改密码统一校验。

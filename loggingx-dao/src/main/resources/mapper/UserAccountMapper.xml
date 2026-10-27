@@ -88,4 +88,52 @@
         INSERT INTO sys_user_role (user_id, role_id) VALUES
         <foreach collection="roleIds" item="roleId" separator=",">(#{userId}, #{roleId})</foreach>
     </insert>
+
+    <select id="selectDeptLinks" resultType="com.loggingx.dao.support.Link">
+        SELECT user_id AS owner_id, dept_id AS member_id FROM sys_user_dept
+        <where>
+            <if test="userIds != null">
+                user_id IN <foreach collection="userIds" item="userId" open="(" separator="," close=")">#{userId}</foreach>
+            </if>
+        </where>
+    </select>
+
+    <delete id="deleteDeptLinks">
+        DELETE FROM sys_user_dept
+        WHERE user_id = #{userId}
+          AND dept_id IN <foreach collection="deptIds" item="deptId" open="(" separator="," close=")">#{deptId}</foreach>
+    </delete>
+
+    <insert id="insertDeptLinks">
+        INSERT INTO sys_user_dept (user_id, dept_id) VALUES
+        <foreach collection="deptIds" item="deptId" separator=",">(#{userId}, #{deptId})</foreach>
+    </insert>
+
+    <select id="selectPostLinks" resultType="com.loggingx.dao.support.Link">
+        SELECT user_id AS owner_id, post_id AS member_id FROM sys_user_post
+        <where>
+            <if test="userIds != null">
+                user_id IN <foreach collection="userIds" item="userId" open="(" separator="," close=")">#{userId}</foreach>
+            </if>
+        </where>
+    </select>
+
+    <delete id="deletePostLinks">
+        DELETE FROM sys_user_post
+        WHERE user_id = #{userId}
+          AND post_id IN <foreach collection="postIds" item="postId" open="(" separator="," close=")">#{postId}</foreach>
+    </delete>
+
+    <insert id="insertPostLinks">
+        INSERT INTO sys_user_post (user_id, post_id) VALUES
+        <foreach collection="postIds" item="postId" separator=",">(#{userId}, #{postId})</foreach>
+    </insert>
+
+    <select id="existsInDept" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM sys_user_dept WHERE dept_id = #{deptId})
+    </select>
+
+    <select id="existsWithPost" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM sys_user_post WHERE post_id = #{postId})
+    </select>
 </mapper>

@@ -63,10 +63,69 @@ class DeptPostApiIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
+    void usersCanBeAssignedToDepartmentsAndPosts() throws Exception {
+        String token = login("super", DEMO_PASSWORD);
+        String parentId = extract(send("POST", "/api/dept", token,
+                "{\"deptName\":\"Assignment HQ\",\"sort\":1,\"enabled\":true}").body(), "\"deptId\":(\\d+)");
+        String childId = extract(send("POST", "/api/dept", token,
+                "{\"parentId\":" + parentId + ",\"deptName\":\"Assignment team\",\"sort\":1,\"enabled\":true}").body(),
+                "\"deptId\":(\\d+)");
+        // Restricted to the parent department, so it also applies to the child department.
+        HttpResponse<String> post = send("POST", "/api/post", token,
+                "{\"postCode\":\"IT_ASSIGN\",\"postName\":\"Assignee\",\"sort\":1,\"enabled\":true,"
+                        + "\"deptIds\":[" + parentId + "]}");
+        assertEquals(201, post.statusCode(), post.body());
+        assertTrue(post.body().contains("\"deptNames\":[\"Assignment HQ\"]"), post.body());
+        String postId = extract(post.body(), "\"postId\":(\\d+)");
+
+        HttpResponse<String> outside = send("POST", "/api/user", token,
+                "{\"userName\":\"outsider\",\"password\":\"password123\",\"userGender\":\"1\",\"userRoles\":[\"R_USER\"],"
+                        + "\"postIds\":[" + postId + "]}");
+        assertEquals(400, outside.statusCode(), outside.body());
+        assertTrue(outside.body().contains("does not apply"), outside.body());
+
+        HttpResponse<String> created = send("POST", "/api/user", token,
+                "{\"userName\":\"assignee\",\"password\":\"password123\",\"userGender\":\"1\",\"userRoles\":[\"R_USER\"],"
+                        + "\"deptId\":" + childId + ",\"postIds\":[" + postId + "]}");
+        assertEquals(201, created.statusCode(), created.body());
+        String userId = extract(created.body(), "\"id\":(\\d+)");
+        assertTrue(created.body().contains("\"deptName\":\"Assignment team\""), created.body());
+        assertTrue(created.body().contains("\"postNames\":[\"Assignee\"]"), created.body());
+
+        // Filtering by a department includes the users of its sub-departments.
+        HttpResponse<String> byParent = send("GET", "/api/user/list?deptId=" + parentId, token, null);
+        assertEquals(200, byParent.statusCode(), byParent.body());
+        assertTrue(byParent.body().contains("\"userName\":\"assignee\""), byParent.body());
+        assertTrue(byParent.body().contains("\"total\":1"), byParent.body());
+
+        HttpResponse<String> deleteDept = send("DELETE", "/api/dept/" + childId, token, null);
+        assertEquals(400, deleteDept.statusCode(), deleteDept.body());
+        assertTrue(deleteDept.body().contains("users"), deleteDept.body());
+        HttpResponse<String> deletePost = send("DELETE", "/api/post/" + postId, token, null);
+        assertEquals(400, deletePost.statusCode(), deletePost.body());
+
+        HttpResponse<String> options = send("GET", "/api/dept/options", token, null);
+        assertEquals(200, options.statusCode(), options.body());
+        assertTrue(options.body().contains("\"deptName\":\"Assignment team\""), options.body());
+        assertTrue(send("GET", "/api/post/options", token, null).body().contains("\"postCode\":\"IT_ASSIGN\""));
+
+        assertEquals(200, send("DELETE", "/api/user/" + userId, token, null).statusCode());
+        assertEquals(200, send("DELETE", "/api/dept/" + childId, token, null).statusCode());
+        // The post is still restricted to the parent department.
+        HttpResponse<String> deleteParentDept = send("DELETE", "/api/dept/" + parentId, token, null);
+        assertEquals(400, deleteParentDept.statusCode(), deleteParentDept.body());
+        assertTrue(deleteParentDept.body().contains("posts"), deleteParentDept.body());
+        assertEquals(200, send("DELETE", "/api/post/" + postId, token, null).statusCode());
+        assertEquals(200, send("DELETE", "/api/dept/" + parentId, token, null).statusCode());
+    }
+
+    @Test
     void menusAreRequired() throws Exception {
         String token = login("user", DEMO_PASSWORD);
 
         assertEquals(403, send("GET", "/api/dept/tree", token, null).statusCode());
         assertEquals(403, send("GET", "/api/post/list", token, null).statusCode());
+        assertEquals(403, send("GET", "/api/dept/options", token, null).statusCode());
+        assertEquals(403, send("GET", "/api/post/options", token, null).statusCode());
     }
 }

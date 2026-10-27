@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.loggingx.dao.agent.LogAgentMapper">
+
+    <resultMap id="agent" type="com.loggingx.dao.agent.LogAgent">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="agent_key" javaType="java.lang.String"/>
+            <arg column="secret_hash" javaType="java.lang.String"/>
+            <arg column="store_id" javaType="java.lang.Long"/>
+            <arg column="hostname" javaType="java.lang.String"/>
+            <arg column="platform" javaType="java.lang.String"/>
+            <arg column="version" javaType="java.lang.String"/>
+            <arg column="ip" javaType="java.lang.String"/>
+            <arg column="server_url" javaType="java.lang.String"/>
+            <arg column="config_revision" javaType="java.lang.String"/>
+            <arg column="registered_at" javaType="java.time.Instant"/>
+            <arg column="last_seen_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="count" type="com.loggingx.dao.agent.AgentCount">
+        <constructor>
+            <arg column="store_id" javaType="java.lang.Long"/>
+            <arg column="total" javaType="_long"/>
+            <arg column="online" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        id, agent_key, secret_hash, store_id, hostname, platform, version, ip, server_url, config_revision,
+        registered_at, last_seen_at
+    </sql>
+
+    <select id="selectById" resultMap="agent">
+        SELECT <include refid="columns"/> FROM log_agent WHERE id = #{id}
+    </select>
+
+    <select id="selectByKey" resultMap="agent">
+        SELECT <include refid="columns"/> FROM log_agent WHERE agent_key = #{agentKey}
+    </select>
+
+    <select id="selectByStore" resultMap="agent">
+        SELECT <include refid="columns"/> FROM log_agent
+        <if test="storeId != null">WHERE store_id = #{storeId}</if>
+        ORDER BY last_seen_at DESC, id DESC
+    </select>
+
+    <select id="countByStore" resultMap="count">
+        SELECT store_id,
+               COUNT(*) AS total,
+               SUM(CASE WHEN last_seen_at &gt;= #{onlineSince} THEN 1 ELSE 0 END) AS online
+        FROM log_agent
+        GROUP BY store_id
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO log_agent (agent_key, secret_hash, store_id, hostname, platform, version, ip, server_url,
+                               config_revision, registered_at, last_seen_at)
+        VALUES (#{agent.agentKey}, #{agent.secretHash}, #{agent.storeId}, #{agent.hostname}, #{agent.platform},
+                #{agent.version}, #{agent.ip}, #{agent.serverUrl}, #{agent.configRevision}, #{agent.registeredAt},
+                #{agent.lastSeenAt})
+    </insert>
+
+    <update id="update">
+        UPDATE log_agent
+        SET secret_hash     = #{agent.secretHash},
+            store_id        = #{agent.storeId},
+            hostname        = #{agent.hostname},
+            platform        = #{agent.platform},
+            version         = #{agent.version},
+            ip              = #{agent.ip},
+            server_url      = #{agent.serverUrl},
+            config_revision = #{agent.configRevision},
+            registered_at   = #{agent.registeredAt},
+            last_seen_at    = #{agent.lastSeenAt}
+        WHERE id = #{agent.id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM log_agent WHERE id = #{id}
+    </delete>
+</mapper>

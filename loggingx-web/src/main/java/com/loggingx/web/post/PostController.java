@@ -20,8 +20,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
- * Post (job position) management. Every endpoint requires access to the post management menu.
+ * Post (job position) management. Every endpoint except {@link #options()} requires access to the post management
+ * menu.
  */
 @RestController
 @RequestMapping("/post")
@@ -37,6 +40,16 @@ public class PostController {
     @GetMapping("/list")
     public ApiResponse<PageResult<PostListItemResponse>> list(PostQuery query) {
         return ApiResponse.success(postService.page(query).map(PostListItemResponse::from));
+    }
+
+    /**
+     * Every post for selection lists, such as the post picker in the user dialog, so user managers can use it too.
+     * Disabled posts are included so a user's current ones can still be shown.
+     */
+    @GetMapping("/options")
+    @PreAuthorize("@permissionService.hasAnyMenu(authentication, 'User', 'Post')")
+    public ApiResponse<List<PostListItemResponse>> options() {
+        return ApiResponse.success(postService.all().stream().map(PostListItemResponse::from).toList());
     }
 
     @PostMapping

@@ -40,6 +40,26 @@ public class SystemDataInitializer implements ApplicationRunner {
     private static final String SYSTEM_MENU = "System";
     private static final String DEPT_MENU = "Dept";
     private static final String POST_MENU = "Post";
+    private static final String LOG_MENU = "Log";
+    private static final String LOG_STORE_MENU = "LogStore";
+    private static final String LOG_QUERY_MENU = "LogQuery";
+    private static final String LOG_TAIL_MENU = "LogTail";
+    private static final String LOG_AGENT_MENU = "LogAgent";
+    private static final String LOG_BACKUP_MENU = "LogBackup";
+    private static final String MONITOR_MENU = "Monitor";
+    private static final String HOST_MONITOR_MENU = "HostMonitor";
+    /** The alert center; named after its first version, which only had host alerts. */
+    private static final String HOST_ALERT_MENU = "HostAlert";
+    private static final String ALERT_CENTER_PATH = "/alert";
+    private static final String ALERT_CENTER_COMPONENT = "/alert/index";
+    private static final String ALERT_CENTER_TITLE = "menus.alert.title";
+    private static final String ALERT_CENTER_ICON = "ri:alarm-warning-line";
+    private static final int ALERT_CENTER_SORT = 4;
+    private static final String BACKUP_PATH = "/backup";
+    private static final String BACKUP_COMPONENT = "/backup/index";
+    private static final String BACKUP_TITLE = "menus.backup.title";
+    private static final String BACKUP_ICON = "ri:archive-drawer-line";
+    private static final int BACKUP_SORT = 5;
 
     private final MenuRepository menuRepository;
     private final RoleRepository roleRepository;
@@ -55,6 +75,8 @@ public class SystemDataInitializer implements ApplicationRunner {
             seed();
         } else {
             addMissingSystemPages();
+            addMissingLogPages();
+            addMissingMonitorPages();
         }
     }
 
@@ -64,7 +86,18 @@ public class SystemDataInitializer implements ApplicationRunner {
         Long console = page(dashboard, "Console", "console", "/dashboard/console", "menus.dashboard.console", 1,
                 false, false, true, false);
 
-        Long system = directory(SYSTEM_MENU, "/system", "menus.system.title", "ri:user-3-line", 2);
+        Long logs = logDirectory();
+        Long logStore = logStorePage(logs);
+        Long logQuery = logQueryPage(logs);
+        Long logTail = logTailPage(logs);
+        Long logAgent = logAgentPage(logs);
+
+        Long monitor = monitorDirectory();
+        Long hostMonitor = hostMonitorPage(monitor);
+        Long hostAlert = alertCenterPage();
+        Long logBackup = backupPage();
+
+        Long system = directory(SYSTEM_MENU, "/system", "menus.system.title", "ri:user-3-line", 6);
         Long user = page(system, "User", "user", "/system/user", "menus.system.user", 1,
                 true, false, false, false);
         page(system, "Role", "role", "/system/role", "menus.system.role", 2, true, false, false, false);
@@ -78,7 +111,7 @@ public class SystemDataInitializer implements ApplicationRunner {
         Long dept = deptPage(system);
         Long post = postPage(system);
 
-        Long exception = directory("Exception", "/exception", "menus.exception.title", "ri:error-warning-line", 3);
+        Long exception = directory("Exception", "/exception", "menus.exception.title", "ri:error-warning-line", 7);
         Long forbidden = page(exception, "Exception403", "403", "/exception/403", "menus.exception.forbidden", 1,
                 true, false, false, true);
         Long notFound = page(exception, "Exception404", "404", "/exception/404", "menus.exception.notFound", 2,
@@ -87,9 +120,11 @@ public class SystemDataInitializer implements ApplicationRunner {
                 "menus.exception.serverError", 3, true, false, false, true);
 
         Set<Long> exceptionMenus = Set.of(exception, forbidden, notFound, serverError);
-        Set<Long> adminMenus = new HashSet<>(Set.of(dashboard, console, system, user, userCenter, dept, post));
+        Set<Long> adminMenus = new HashSet<>(Set.of(dashboard, console, system, user, userCenter, dept, post,
+                logs, logStore, logQuery, logTail, logAgent, logBackup, monitor, hostMonitor, hostAlert));
         adminMenus.addAll(exceptionMenus);
-        Set<Long> userMenus = new HashSet<>(Set.of(dashboard, console));
+        Set<Long> userMenus = new HashSet<>(Set.of(dashboard, console, logs, logQuery, logTail, monitor,
+                hostMonitor));
         userMenus.addAll(exceptionMenus);
 
         // The super administrator role implicitly has every menu, so it needs no explicit grants.
@@ -122,6 +157,133 @@ public class SystemDataInitializer implements ApplicationRunner {
             postPage(system.get().id());
             log.info("Added the {} menu", POST_MENU);
         }
+    }
+
+    /**
+     * Adds the log management directory and pages to a database seeded before they existed, like
+     * {@link #addMissingSystemPages()}: only the super administrator sees them until they are granted to other roles.
+     */
+    private void addMissingLogPages() {
+        List<Menu> menus = menuRepository.findAll().stream().filter(menu -> !menu.isButton()).toList();
+        Set<String> names = menus.stream().map(Menu::name).collect(Collectors.toSet());
+        Long logs = menus.stream()
+                .filter(menu -> LOG_MENU.equals(menu.name()))
+                .map(Menu::id)
+                .findFirst()
+                .orElseGet(() -> {
+                    log.info("Added the {} menu", LOG_MENU);
+                    return logDirectory();
+                });
+        if (!names.contains(LOG_STORE_MENU)) {
+            logStorePage(logs);
+            log.info("Added the {} menu", LOG_STORE_MENU);
+        }
+        if (!names.contains(LOG_QUERY_MENU)) {
+            logQueryPage(logs);
+            log.info("Added the {} menu", LOG_QUERY_MENU);
+        }
+        if (!names.contains(LOG_TAIL_MENU)) {
+            logTailPage(logs);
+            log.info("Added the {} menu", LOG_TAIL_MENU);
+        }
+        if (!names.contains(LOG_AGENT_MENU)) {
+            logAgentPage(logs);
+            log.info("Added the {} menu", LOG_AGENT_MENU);
+        }
+        Optional<Menu> backup = menus.stream().filter(menu -> LOG_BACKUP_MENU.equals(menu.name())).findFirst();
+        if (backup.isEmpty()) {
+            backupPage();
+            log.info("Added the {} menu", LOG_BACKUP_MENU);
+        } else if (backup.get().parentId() != Menu.ROOT_PARENT_ID) {
+            moveToTopLevel(backup.get(), BACKUP_PATH, BACKUP_COMPONENT, BACKUP_TITLE, BACKUP_ICON, BACKUP_SORT);
+        }
+    }
+
+    /**
+     * Adds the monitoring directory and pages to a database seeded before they existed, like
+     * {@link #addMissingSystemPages()}: only the super administrator sees them until they are granted to other roles.
+     */
+    private void addMissingMonitorPages() {
+        List<Menu> menus = menuRepository.findAll().stream().filter(menu -> !menu.isButton()).toList();
+        Set<String> names = menus.stream().map(Menu::name).collect(Collectors.toSet());
+        Long monitor = menus.stream()
+                .filter(menu -> MONITOR_MENU.equals(menu.name()))
+                .map(Menu::id)
+                .findFirst()
+                .orElseGet(() -> {
+                    log.info("Added the {} menu", MONITOR_MENU);
+                    return monitorDirectory();
+                });
+        if (!names.contains(HOST_MONITOR_MENU)) {
+            hostMonitorPage(monitor);
+            log.info("Added the {} menu", HOST_MONITOR_MENU);
+        }
+        Optional<Menu> alertCenter = menus.stream().filter(menu -> HOST_ALERT_MENU.equals(menu.name())).findFirst();
+        if (alertCenter.isEmpty()) {
+            alertCenterPage();
+            log.info("Added the {} menu", HOST_ALERT_MENU);
+        } else if (alertCenter.get().parentId() != Menu.ROOT_PARENT_ID) {
+            moveToTopLevel(alertCenter.get(), ALERT_CENTER_PATH, ALERT_CENTER_COMPONENT, ALERT_CENTER_TITLE,
+                    ALERT_CENTER_ICON, ALERT_CENTER_SORT);
+        }
+    }
+
+    /**
+     * Turns a page seeded below a directory by a previous version into a top-level menu (the alert center started in
+     * the monitoring directory, backups in the log directory). The menu keeps its id and name, so roles granted it
+     * and permission checks are unaffected.
+     */
+    private void moveToTopLevel(Menu page, String path, String component, String title, String icon, int sort) {
+        Menu moved = new Menu(page.id(), Menu.ROOT_PARENT_ID, page.type(), page.name(), path, component, title, icon,
+                sort, page.enabled(), page.keepAlive(), page.hidden(), page.hideTab(), page.link(), page.iframe(),
+                page.showBadge(), page.textBadge(), page.fixedTab(), page.activePath(), page.fullPage(),
+                page.authMark(), Instant.now());
+        menuRepository.update(page, moved);
+        log.info("Moved the {} menu to the top level", page.name());
+    }
+
+    private Long monitorDirectory() {
+        return directory(MONITOR_MENU, "/monitor", "menus.monitor.title", "ri:pulse-line", 3);
+    }
+
+    private Long hostMonitorPage(Long monitor) {
+        return page(monitor, HOST_MONITOR_MENU, "host", "/monitor/host", "menus.monitor.host", 1, true, false, false,
+                false);
+    }
+
+    /** A top-level page (no directory): log and host alerts and their notifications. */
+    private Long alertCenterPage() {
+        return insert(new Menu(null, Menu.ROOT_PARENT_ID, MenuType.MENU, HOST_ALERT_MENU, ALERT_CENTER_PATH,
+                ALERT_CENTER_COMPONENT, ALERT_CENTER_TITLE, ALERT_CENTER_ICON, ALERT_CENTER_SORT, true, true, false,
+                false, null, false, false, null, false, null, false, null, Instant.now()));
+    }
+
+    private Long logDirectory() {
+        return directory(LOG_MENU, "/log", "menus.log.title", "ri:file-list-3-line", 2);
+    }
+
+    private Long logStorePage(Long logs) {
+        return page(logs, LOG_STORE_MENU, "store", "/log/store", "menus.log.store", 1, true, false, false, false);
+    }
+
+    private Long logQueryPage(Long logs) {
+        return page(logs, LOG_QUERY_MENU, "query", "/log/query", "menus.log.query", 2, true, false, false, false);
+    }
+
+    // Not kept alive: leaving the page closes its live connection.
+    private Long logTailPage(Long logs) {
+        return page(logs, LOG_TAIL_MENU, "tail", "/log/tail", "menus.log.tail", 3, false, false, false, false);
+    }
+
+    private Long logAgentPage(Long logs) {
+        return page(logs, LOG_AGENT_MENU, "agent", "/log/agent", "menus.log.agent", 4, true, false, false, false);
+    }
+
+    /** A top-level page (no directory): archives of the log stores in object storage. */
+    private Long backupPage() {
+        return insert(new Menu(null, Menu.ROOT_PARENT_ID, MenuType.MENU, LOG_BACKUP_MENU, BACKUP_PATH,
+                BACKUP_COMPONENT, BACKUP_TITLE, BACKUP_ICON, BACKUP_SORT, true, true, false, false, null, false,
+                false, null, false, null, false, null, Instant.now()));
     }
 
     private Long deptPage(Long system) {

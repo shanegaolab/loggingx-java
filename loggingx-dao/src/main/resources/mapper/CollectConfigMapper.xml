@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.loggingx.dao.agent.CollectConfigMapper">
+
+    <resultMap id="row" type="com.loggingx.dao.agent.CollectConfigMapper$Row">
+        <constructor>
+            <idArg column="store_id" javaType="java.lang.Long"/>
+            <arg column="paths" javaType="java.lang.String"/>
+            <arg column="windows_paths" javaType="java.lang.String"/>
+            <arg column="containers" javaType="_boolean"/>
+            <arg column="multiline" javaType="java.lang.String"/>
+            <arg column="multiline_pattern" javaType="java.lang.String"/>
+            <arg column="transport" javaType="java.lang.String"/>
+            <arg column="kafka_servers" javaType="java.lang.String"/>
+            <arg column="kafka_topic" javaType="java.lang.String"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectByStore" resultMap="row">
+        SELECT store_id, paths, windows_paths, containers, multiline, multiline_pattern, transport, kafka_servers,
+               kafka_topic, updated_at
+        FROM log_collect_config WHERE store_id = #{storeId}
+    </select>
+
+    <update id="update">
+        UPDATE log_collect_config
+        SET paths             = #{row.paths},
+            windows_paths     = #{row.windowsPaths},
+            containers        = #{row.containers},
+            multiline         = #{row.multiline},
+            multiline_pattern = #{row.multilinePattern},
+            transport         = #{row.transport},
+            kafka_servers     = #{row.kafkaServers},
+            kafka_topic       = #{row.kafkaTopic},
+            updated_at        = #{row.updatedAt}
+        WHERE store_id = #{row.storeId}
+    </update>
+
+    <insert id="insert">
+        INSERT INTO log_collect_config (store_id, paths, windows_paths, containers, multiline, multiline_pattern,
+                                        transport, kafka_servers, kafka_topic, updated_at)
+        VALUES (#{row.storeId}, #{row.paths}, #{row.windowsPaths}, #{row.containers}, #{row.multiline},
+                #{row.multilinePattern}, #{row.transport}, #{row.kafkaServers}, #{row.kafkaTopic},
+                #{row.updatedAt})
+    </insert>
+</mapper>

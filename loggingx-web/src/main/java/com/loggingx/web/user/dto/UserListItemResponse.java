@@ -5,6 +5,10 @@ import com.loggingx.common.util.DateTimes;
 
 import java.util.List;
 
+/**
+ * @param deptName  {@code null} when the user belongs to no department
+ * @param postNames in the same order as {@code postIds}
+ */
 public record UserListItemResponse(
         Long id,
         String avatar,
@@ -15,6 +19,10 @@ public record UserListItemResponse(
         String userPhone,
         String userEmail,
         List<String> userRoles,
+        Long deptId,
+        String deptName,
+        List<Long> postIds,
+        List<String> postNames,
         String createBy,
         String createTime,
         String updateBy,
@@ -23,7 +31,8 @@ public record UserListItemResponse(
 
     public static UserListItemResponse from(UserView user) {
         return new UserListItemResponse(user.id(), user.avatar(), user.status(), user.username(), user.gender(),
-                user.nickName(), user.phone(), user.email(), user.roleCodes(), user.createdBy(),
-                DateTimes.format(user.createdAt()), user.updatedBy(), DateTimes.format(user.updatedAt()));
+                user.nickName(), user.phone(), user.email(), user.roleCodes(), user.deptId(), user.deptName(),
+                user.postIds(), user.postNames(), user.createdBy(), DateTimes.format(user.createdAt()),
+                user.updatedBy(), DateTimes.format(user.updatedAt()));
     }
 }

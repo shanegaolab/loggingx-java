@@ -22,7 +22,17 @@ public class MybatisUserAccountRepository extends AbstractMybatisRepository<User
 
     @Override
     public Optional<UserAccount> findByUsername(String username) {
-        return withRoles(mapper.selectByUsername(username));
+        return withLinks(mapper.selectByUsername(username));
+    }
+
+    @Override
+    public boolean existsInDept(Long deptId) {
+        return mapper.existsInDept(deptId);
+    }
+
+    @Override
+    public boolean existsWithPost(Long postId) {
+        return mapper.existsWithPost(postId);
     }
 
     @Override
@@ -37,26 +47,31 @@ public class MybatisUserAccountRepository extends AbstractMybatisRepository<User
 
     @Override
     protected List<UserAccount> loadAll() {
-        return attachLinks(mapper.selectAll(), true, mapper::selectRoleLinks, UserAccount::withRoleIds);
+        return attachAllLinks(mapper.selectAll(), true);
     }
 
     @Override
     protected Optional<UserAccount> load(Long id, boolean forUpdate) {
-        return withRoles(mapper.selectById(id, forUpdate));
+        return withLinks(mapper.selectById(id, forUpdate));
     }
 
     @Override
     protected Long insertRow(UserAccount account) {
         GeneratedKey key = new GeneratedKey();
         mapper.insert(account, key);
-        syncRoles(key.getId(), Set.of(), account.roleIds());
+        syncLinks(key.getId(), Set.of(), account.roleIds(), mapper::deleteRoleLinks, mapper::insertRoleLinks);
+        syncLinks(key.getId(), Set.of(), deptIds(account), mapper::deleteDeptLinks, mapper::insertDeptLinks);
+        syncLinks(key.getId(), Set.of(), account.postIds(), mapper::deletePostLinks, mapper::insertPostLinks);
         return key.getId();
     }
 
     @Override
     protected void updateRow(UserAccount current, UserAccount updated) {
         mapper.update(updated);
-        syncRoles(updated.id(), current.roleIds(), updated.roleIds());
+        Long id = updated.id();
+        syncLinks(id, current.roleIds(), updated.roleIds(), mapper::deleteRoleLinks, mapper::insertRoleLinks);
+        syncLinks(id, deptIds(current), deptIds(updated), mapper::deleteDeptLinks, mapper::insertDeptLinks);
+        syncLinks(id, current.postIds(), updated.postIds(), mapper::deletePostLinks, mapper::insertPostLinks);
     }
 
     @Override
@@ -64,12 +79,21 @@ public class MybatisUserAccountRepository extends AbstractMybatisRepository<User
         mapper.deleteById(id);
     }
 
-    private Optional<UserAccount> withRoles(UserAccount account) {
-        return Optional.ofNullable(account).map(found ->
-                attachLinks(List.of(found), false, mapper::selectRoleLinks, UserAccount::withRoleIds).getFirst());
+    private Optional<UserAccount> withLinks(UserAccount account) {
+        return Optional.ofNullable(account).map(found -> attachAllLinks(List.of(found), false).getFirst());
     }
 
-    private void syncRoles(Long id, Set<Long> current, Set<Long> updated) {
-        syncLinks(id, current, updated, mapper::deleteRoleLinks, mapper::insertRoleLinks);
+    private List<UserAccount> attachAllLinks(List<UserAccount> accounts, boolean all) {
+        List<UserAccount> withRoles = attachLinks(accounts, all, mapper::selectRoleLinks, UserAccount::withRoleIds);
+        List<UserAccount> withDept = attachLinks(withRoles, all, mapper::selectDeptLinks,
+                (account, deptIds) -> account.withDeptId(deptIds.stream().findFirst().orElse(null)));
+        return attachLinks(withDept, all, mapper::selectPostLinks, UserAccount::withPostIds);
+    }
+
+    /**
+     * The department as a link set, so it is written like the other associations.
+     */
+    private static Set<Long> deptIds(UserAccount account) {
+        return account.deptId() == null ? Set.of() : Set.of(account.deptId());
     }
 }

@@ -9,6 +9,8 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSourceResolvable;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -44,6 +46,26 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAccessDenied() {
         return response(HttpStatus.FORBIDDEN, "You do not have permission to perform this operation");
+    }
+
+    /**
+     * A foreign key refused the write: the services check references first, so this only happens when a concurrent
+     * request removed or started using the referenced row in between, e.g. a department deleted while a user is
+     * being assigned to it.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException exception) {
+        log.warn("Write refused by a database constraint: {}", exception.getMostSpecificCause().getMessage());
+        return response(HttpStatus.CONFLICT, "The data was changed by another request; refresh and try again");
+    }
+
+    /**
+     * A database could not be reached, e.g. ClickHouse for the log pages while it is down.
+     */
+    @ExceptionHandler(DataAccessResourceFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleStorageUnavailable(DataAccessResourceFailureException exception) {
+        log.warn("A data store is unavailable: {}", exception.getMostSpecificCause().getMessage());
+        return response(HttpStatus.SERVICE_UNAVAILABLE, "The data store is temporarily unavailable; try again later");
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

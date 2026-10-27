@@ -6,6 +6,10 @@ import com.loggingx.common.exception.ConflictException;
 import com.loggingx.common.exception.ForbiddenException;
 import com.loggingx.dao.account.UserAccount;
 import com.loggingx.dao.account.UserAccountRepository;
+import com.loggingx.dao.dept.Dept;
+import com.loggingx.dao.dept.DeptRepository;
+import com.loggingx.dao.post.Post;
+import com.loggingx.dao.post.PostRepository;
 import com.loggingx.dao.role.Role;
 import com.loggingx.dao.role.RoleRepository;
 import com.loggingx.dao.support.UpdateResult;
@@ -42,6 +46,12 @@ class UserServiceTest {
     private RoleRepository roleRepository;
 
     @Mock
+    private DeptRepository deptRepository;
+
+    @Mock
+    private PostRepository postRepository;
+
+    @Mock
     private PermissionService permissionService;
 
     @Mock
@@ -51,7 +61,8 @@ class UserServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new UserService(userAccountRepository, roleRepository, permissionService, passwordEncoder);
+        service = new UserService(userAccountRepository, roleRepository, deptRepository, postRepository,
+                permissionService, passwordEncoder);
         lenient().when(userAccountRepository.findByUsername("admin"))
                 .thenReturn(Optional.of(account(1L, "admin", 0, UserAccount.STATUS_ONLINE)));
         lenient().when(roleRepository.findByCode("R_USER")).thenReturn(Optional.of(USER_ROLE));
@@ -64,8 +75,35 @@ class UserServiceTest {
                 Set.of(USER_ROLE.id()), null, null, null, null);
     }
 
+    private static UserAccount account(Long id, String username, Long deptId, Set<Long> postIds) {
+        return new UserAccount(id, username, "encoded", 0, username, null, null, null, null, "1",
+                Set.of(USER_ROLE.id()), deptId, postIds, null, null, null, null);
+    }
+
     private static UserCommand command(String password, String status) {
-        return new UserCommand("alice", password, null, null, null, null, status, List.of("R_USER"));
+        return command(password, status, null, null);
+    }
+
+    private static UserCommand command(String password, String status, Long deptId, List<Long> postIds) {
+        return new UserCommand("alice", password, null, null, null, null, status, List.of("R_USER"), deptId, postIds);
+    }
+
+    private static Dept dept(Long id, Long parentId, String name, boolean enabled) {
+        return new Dept(id, parentId, name, 0, null, null, null, enabled, null, null);
+    }
+
+    private static Post post(Long id, String name, int sort, boolean enabled) {
+        return new Post(id, "P" + id, name, sort, enabled, null, null, null);
+    }
+
+    private static Post scopedPost(Long id, String name, Set<Long> deptIds) {
+        return new Post(id, "P" + id, name, 0, true, null, deptIds, null, null);
+    }
+
+    private UserAccount savedAccount() {
+        ArgumentCaptor<UserAccount> captor = ArgumentCaptor.forClass(UserAccount.class);
+        verify(userAccountRepository).update(any(), captor.capture());
+        return captor.getValue();
     }
 
     private int savedTokenVersion() {
@@ -141,5 +179,111 @@ class UserServiceTest {
 
         assertThrows(ForbiddenException.class, () -> service.create(command("password123", "1"), "admin"));
         verify(userAccountRepository, never()).insert(any());
+    }
+
+    @Test
+    void updateAssignsDepartmentAndPosts() {
+        when(userAccountRepository.findById(7L)).thenReturn(Optional.of(account(7L, "alice", 2, "1")));
+        when(deptRepository.findById(20L)).thenReturn(Optional.of(dept(20L, 0L, "R&D", true)));
+        when(postRepository.findById(30L)).thenReturn(Optional.of(post(30L, "Developer", 1, true)));
+        when(postRepository.findById(31L)).thenReturn(Optional.of(post(31L, "Lead", 0, true)));
+        when(deptRepository.findAll()).thenReturn(List.of(dept(20L, 0L, "R&D", true)));
+        when(postRepository.findAll()).thenReturn(List.of(post(30L, "Developer", 1, true), post(31L, "Lead", 0, true)));
+
+        UserView view = service.update(7L, command(null, "1", 20L, List.of(30L, 31L)), "admin");
+
+        assertEquals(20L, savedAccount().deptId());
+        assertEquals(Set.of(30L, 31L), savedAccount().postIds());
+        assertEquals("R&D", view.deptName());
+        assertEquals(List.of(31L, 30L), view.postIds());
+        assertEquals(List.of("Lead", "Developer"), view.postNames());
+    }
+
+    @Test
+    void updateKeepsDisabledDepartmentAndPostsTheUserAlreadyHas() {
+        when(userAccountRepository.findById(7L)).thenReturn(Optional.of(account(7L, "alice", 20L, Set.of(30L))));
+        when(deptRepository.findById(20L)).thenReturn(Optional.of(dept(20L, 0L, "Closed", false)));
+        when(postRepository.findById(30L)).thenReturn(Optional.of(post(30L, "Retired", 1, false)));
+
+        service.update(7L, command(null, "1", 20L, List.of(30L)), "admin");
+
+        assertEquals(20L, savedAccount().deptId());
+        assertEquals(Set.of(30L), savedAccount().postIds());
+    }
+
+    @Test
+    void updateRejectsNewlyAssigningDisabledDepartmentOrPost() {
+        when(userAccountRepository.findById(7L)).thenReturn(Optional.of(account(7L, "alice", 2, "1")));
+        when(deptRepository.findById(20L)).thenReturn(Optional.of(dept(20L, 0L, "Closed", false)));
+        when(postRepository.findById(30L)).thenReturn(Optional.of(post(30L, "Retired", 1, false)));
+
+        assertThrows(BadRequestException.class,
+                () -> service.update(7L, command(null, "1", 20L, null), "admin"));
+        assertThrows(BadRequestException.class,
+                () -> service.update(7L, command(null, "1", null, List.of(30L)), "admin"));
+        verify(userAccountRepository, never()).update(any(), any());
+    }
+
+    @Test
+    void createRejectsUnknownDepartmentOrPost() {
+        assertThrows(BadRequestException.class,
+                () -> service.create(command("password123", "1", 99L, null), "admin"));
+        assertThrows(BadRequestException.class,
+                () -> service.create(command("password123", "1", null, List.of(99L)), "admin"));
+        verify(userAccountRepository, never()).insert(any());
+    }
+
+    @Test
+    void postsRestrictedToDepartmentsApplyToTheirDescendants() {
+        // Company(1) > R&D(2) > Backend(3), Company(1) > Sales(4)
+        lenient().when(deptRepository.findAll()).thenReturn(List.of(
+                dept(1L, 0L, "Company", true), dept(2L, 1L, "R&D", true), dept(3L, 2L, "Backend", true),
+                dept(4L, 1L, "Sales", true)));
+        lenient().when(deptRepository.findById(3L)).thenReturn(Optional.of(dept(3L, 2L, "Backend", true)));
+        lenient().when(deptRepository.findById(4L)).thenReturn(Optional.of(dept(4L, 1L, "Sales", true)));
+        when(postRepository.findById(30L)).thenReturn(Optional.of(scopedPost(30L, "Engineer", Set.of(2L))));
+        when(userAccountRepository.insert(any())).thenAnswer(call -> Optional.of(call.getArgument(0)));
+        lenient().when(passwordEncoder.encode(any())).thenReturn("encoded");
+
+        service.create(command("password123", "1", 3L, List.of(30L)), "admin");
+
+        assertThrows(BadRequestException.class,
+                () -> service.create(command("password123", "1", 4L, List.of(30L)), "admin"));
+        assertThrows(BadRequestException.class,
+                () -> service.create(command("password123", "1", null, List.of(30L)), "admin"));
+    }
+
+    @Test
+    void updateKeepsAHeldPostOnlyWhileTheDepartmentIsUnchanged() {
+        lenient().when(deptRepository.findAll()).thenReturn(List.of(
+                dept(1L, 0L, "Company", true), dept(2L, 1L, "R&D", true), dept(4L, 1L, "Sales", true)));
+        when(deptRepository.findById(4L)).thenReturn(Optional.of(dept(4L, 1L, "Sales", true)));
+        // The post was narrowed to R&D after the Sales user got it.
+        when(postRepository.findById(30L)).thenReturn(Optional.of(scopedPost(30L, "Engineer", Set.of(2L))));
+        when(userAccountRepository.findById(7L)).thenReturn(Optional.of(account(7L, "alice", 4L, Set.of(30L))));
+
+        service.update(7L, command(null, "1", 4L, List.of(30L)), "admin");
+        assertEquals(Set.of(30L), savedAccount().postIds());
+
+        assertThrows(BadRequestException.class,
+                () -> service.update(7L, command(null, "1", null, List.of(30L)), "admin"));
+    }
+
+    @Test
+    void pageFiltersByDepartmentIncludingDescendants() {
+        when(deptRepository.findAll()).thenReturn(List.of(
+                dept(1L, 0L, "Company", true), dept(2L, 1L, "R&D", true), dept(3L, 2L, "Backend", true),
+                dept(4L, 1L, "Sales", true)));
+        when(userAccountRepository.findAll()).thenReturn(List.of(
+                account(10L, "ceo", 1L, Set.of()), account(11L, "dev", 3L, Set.of()),
+                account(12L, "seller", 4L, Set.of()), account(13L, "loner", null, Set.of())));
+
+        List<String> rnd = service.page(new UserQuery(1, 10, null, null, null, null, null, 2L)).records().stream()
+                .map(UserView::username).toList();
+        List<String> all = service.page(new UserQuery(1, 10, null, null, null, null, null, null)).records().stream()
+                .map(UserView::username).toList();
+
+        assertEquals(List.of("dev"), rnd);
+        assertEquals(List.of("ceo", "dev", "seller", "loner"), all);
     }
 }

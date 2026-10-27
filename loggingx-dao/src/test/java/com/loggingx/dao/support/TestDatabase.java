@@ -4,6 +4,9 @@ import com.loggingx.dao.account.MybatisUserAccountRepository;
 import com.loggingx.dao.account.UserAccountMapper;
 import com.loggingx.dao.dept.DeptMapper;
 import com.loggingx.dao.dept.MybatisDeptRepository;
+import com.loggingx.dao.log.InMemoryLogRecordRepository;
+import com.loggingx.dao.log.LogStoreMapper;
+import com.loggingx.dao.log.MybatisLogStoreRepository;
 import com.loggingx.dao.menu.MenuMapper;
 import com.loggingx.dao.menu.MybatisMenuRepository;
 import com.loggingx.dao.post.MybatisPostRepository;
@@ -31,6 +34,9 @@ public final class TestDatabase {
     public final MybatisMenuRepository menuRepository;
     public final MybatisDeptRepository deptRepository;
     public final MybatisPostRepository postRepository;
+    public final MybatisLogStoreRepository logStoreRepository;
+    /** Log lines are kept in memory: the production store is ClickHouse, which H2 cannot stand in for. */
+    public final InMemoryLogRecordRepository logRecordRepository;
 
     public TestDatabase() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
@@ -57,5 +63,8 @@ public final class TestDatabase {
         menuRepository = new MybatisMenuRepository(session.getMapper(MenuMapper.class), transactionManager);
         deptRepository = new MybatisDeptRepository(session.getMapper(DeptMapper.class), transactionManager);
         postRepository = new MybatisPostRepository(session.getMapper(PostMapper.class), transactionManager);
+        logStoreRepository = new MybatisLogStoreRepository(session.getMapper(LogStoreMapper.class),
+                transactionManager);
+        logRecordRepository = new InMemoryLogRecordRepository(50_000);
     }
 }

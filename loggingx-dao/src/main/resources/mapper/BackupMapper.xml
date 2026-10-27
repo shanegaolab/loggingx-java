@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.loggingx.dao.backup.BackupMapper">
+
+    <resultMap id="storage" type="com.loggingx.dao.backup.BackupStorage">
+        <constructor>
+            <arg column="endpoint" javaType="java.lang.String"/>
+            <arg column="region" javaType="java.lang.String"/>
+            <arg column="bucket" javaType="java.lang.String"/>
+            <arg column="prefix" javaType="java.lang.String"/>
+            <arg column="access_key" javaType="java.lang.String"/>
+            <arg column="secret_key" javaType="java.lang.String"/>
+            <arg column="path_style" javaType="_boolean"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="policy" type="com.loggingx.dao.backup.BackupPolicy">
+        <constructor>
+            <idArg column="store_id" javaType="java.lang.Long"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="archive_after_days" javaType="_int"/>
+            <arg column="keep_days" javaType="_int"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="archive" type="com.loggingx.dao.backup.BackupArchive">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="store_id" javaType="java.lang.Long"/>
+            <arg column="store_code" javaType="java.lang.String"/>
+            <arg column="log_day" javaType="java.time.LocalDate"/>
+            <arg column="object_key" javaType="java.lang.String"/>
+            <arg column="record_count" javaType="_long"/>
+            <arg column="raw_bytes" javaType="_long"/>
+            <arg column="size_bytes" javaType="_long"/>
+            <arg column="sha256" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="error" javaType="java.lang.String"/>
+            <arg column="archived_at" javaType="java.time.Instant"/>
+            <arg column="restore_status" javaType="java.lang.String"/>
+            <arg column="restore_error" javaType="java.lang.String"/>
+            <arg column="restored_at" javaType="java.time.Instant"/>
+            <arg column="restored_until" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="archiveColumns">
+        id, store_id, store_code, log_day, object_key, record_count, raw_bytes, size_bytes, sha256, status, error,
+        archived_at, restore_status, restore_error, restored_at, restored_until
+    </sql>
+
+    <!-- storage -->
+
+    <select id="selectStorage" resultMap="storage">
+        SELECT endpoint, region, bucket, prefix, access_key, secret_key, path_style, updated_at
+        FROM backup_storage WHERE id = 1
+    </select>
+
+    <update id="updateStorage">
+        UPDATE backup_storage
+        SET endpoint   = #{storage.endpoint},
+            region     = #{storage.region},
+            bucket     = #{storage.bucket},
+            prefix     = #{storage.prefix},
+            access_key = #{storage.accessKey},
+            secret_key = #{storage.secretKey},
+            path_style = #{storage.pathStyle},
+            updated_at = #{storage.updatedAt}
+        WHERE id = 1
+    </update>
+
+    <insert id="insertStorage">
+        INSERT INTO backup_storage (id, endpoint, region, bucket, prefix, access_key, secret_key, path_style,
+                                    updated_at)
+        VALUES (1, #{storage.endpoint}, #{storage.region}, #{storage.bucket}, #{storage.prefix},
+                #{storage.accessKey}, #{storage.secretKey}, #{storage.pathStyle}, #{storage.updatedAt})
+    </insert>
+
+    <!-- policies -->
+
+    <select id="selectPolicies" resultMap="policy">
+        SELECT store_id, enabled, archive_after_days, keep_days, updated_at FROM backup_policy ORDER BY store_id
+    </select>
+
+    <select id="selectPolicy" resultMap="policy">
+        SELECT store_id, enabled, archive_after_days, keep_days, updated_at FROM backup_policy
+        WHERE store_id = #{storeId}
+    </select>
+
+    <update id="updatePolicy">
+        UPDATE backup_policy
+        SET enabled            = #{policy.enabled},
+            archive_after_days = #{policy.archiveAfterDays},
+            keep_days          = #{policy.keepDays},
+            updated_at         = #{policy.updatedAt}
+        WHERE store_id = #{policy.storeId}
+    </update>
+
+    <insert id="insertPolicy">
+        INSERT INTO backup_policy (store_id, enabled, archive_after_days, keep_days, updated_at)
+        VALUES (#{policy.storeId}, #{policy.enabled}, #{policy.archiveAfterDays}, #{policy.keepDays},
+                #{policy.updatedAt})
+    </insert>
+
+    <!-- archives -->
+
+    <select id="selectArchives" resultMap="archive">
+        SELECT <include refid="archiveColumns"/> FROM backup_archive
+        <where>
+            <if test="storeId != null">store_id = #{storeId}</if>
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+        ORDER BY log_day DESC, store_id
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectArchive" resultMap="archive">
+        SELECT <include refid="archiveColumns"/> FROM backup_archive WHERE id = #{id}
+    </select>
+
+    <select id="selectArchiveByDay" resultMap="archive">
+        SELECT <include refid="archiveColumns"/> FROM backup_archive WHERE store_id = #{storeId} AND log_day = #{day}
+    </select>
+
+    <select id="selectArchivesBefore" resultMap="archive">
+        SELECT <include refid="archiveColumns"/> FROM backup_archive
+        WHERE store_id = #{storeId} AND log_day &lt; #{before} AND status = 'success'
+    </select>
+
+    <select id="selectRestoredAfter" resultMap="archive">
+        SELECT <include refid="archiveColumns"/> FROM backup_archive
+        WHERE restore_status IN ('restoring', 'restored') AND restored_until &gt; #{at}
+    </select>
+
+    <insert id="insertArchive" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO backup_archive (store_id, store_code, log_day, object_key, record_count, raw_bytes, size_bytes,
+                                    sha256, status, error, archived_at, restore_status, restore_error, restored_at,
+                                    restored_until)
+        VALUES (#{archive.storeId}, #{archive.storeCode}, #{archive.day}, #{archive.objectKey}, #{archive.recordCount},
+                #{archive.rawBytes}, #{archive.sizeBytes}, #{archive.sha256}, #{archive.status}, #{archive.error},
+                #{archive.archivedAt}, #{archive.restoreStatus}, #{archive.restoreError}, #{archive.restoredAt},
+                #{archive.restoredUntil})
+    </insert>
+
+    <update id="updateArchive">
+        UPDATE backup_archive
+        SET object_key     = #{archive.objectKey},
+            record_count   = #{archive.recordCount},
+            raw_bytes      = #{archive.rawBytes},
+            size_bytes     = #{archive.sizeBytes},
+            sha256         = #{archive.sha256},
+            status         = #{archive.status},
+            error          = #{archive.error},
+            archived_at    = #{archive.archivedAt},
+            restore_status = #{archive.restoreStatus},
+            restore_error  = #{archive.restoreError},
+            restored_at    = #{archive.restoredAt},
+            restored_until = #{archive.restoredUntil}
+        WHERE id = #{archive.id}
+    </update>
+
+    <delete id="deleteArchive">
+        DELETE FROM backup_archive WHERE id = #{id}
+    </delete>
+</mapper>

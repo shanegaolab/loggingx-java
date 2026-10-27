@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.loggingx.dao.log.LogStoreMapper">
+
+    <resultMap id="store" type="com.loggingx.dao.log.LogStore">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="code" javaType="java.lang.String"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="retention_days" javaType="_int"/>
+            <arg column="ingest_token" javaType="java.lang.String"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        id, code, name, description, retention_days, ingest_token, enabled, created_at, updated_at
+    </sql>
+
+    <select id="selectAll" resultMap="store">
+        SELECT <include refid="columns"/> FROM log_store ORDER BY id
+    </select>
+
+    <select id="selectById" resultMap="store">
+        SELECT <include refid="columns"/> FROM log_store WHERE id = #{id}
+        <if test="forUpdate">FOR UPDATE</if>
+    </select>
+
+    <select id="selectByCode" resultMap="store">
+        SELECT <include refid="columns"/> FROM log_store WHERE code = #{code}
+    </select>
+
+    <select id="selectByIngestToken" resultMap="store">
+        SELECT <include refid="columns"/> FROM log_store WHERE ingest_token = #{ingestToken}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO log_store (code, name, description, retention_days, ingest_token, enabled, created_at, updated_at)
+        VALUES (#{store.code}, #{store.name}, #{store.description}, #{store.retentionDays}, #{store.ingestToken},
+                #{store.enabled}, #{store.createdAt}, #{store.updatedAt})
+    </insert>
+
+    <update id="update">
+        UPDATE log_store
+        SET code           = #{store.code},
+            name           = #{store.name},
+            description    = #{store.description},
+            retention_days = #{store.retentionDays},
+            ingest_token   = #{store.ingestToken},
+            enabled        = #{store.enabled},
+            created_at     = #{store.createdAt},
+            updated_at     = #{store.updatedAt}
+        WHERE id = #{store.id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM log_store WHERE id = #{id}
+    </delete>
+</mapper>

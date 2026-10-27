@@ -7,3 +7,13 @@ spring:
     password:
     hikari:
       maximum-pool-size: 2
+# Log lines are kept in memory instead of ClickHouse, and the live view polls quickly without a settle delay.
+loggingx:
+  log:
+    storage: memory
+    tail:
+      poll-interval: 200
+      settle-delay: 0s
+  monitor:
+    # Tests evaluate alerts themselves; the scheduled evaluation would race with them.
+    alert-initial-delay: 3600000

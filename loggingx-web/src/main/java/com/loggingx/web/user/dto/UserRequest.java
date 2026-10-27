@@ -7,6 +7,7 @@ import com.loggingx.common.util.UsernamePolicy;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -34,10 +35,15 @@ public record UserRequest(
         @Pattern(regexp = "[1-4]", message = "status must be between 1 and 4")
         String status,
         @NotEmpty(message = "userRoles must not be empty")
-        List<@NotBlank String> userRoles
+        List<@NotBlank String> userRoles,
+        // Optional: null leaves the user without a department.
+        Long deptId,
+        // Optional: null or empty leaves the user without posts.
+        List<@NotNull Long> postIds
 ) {
 
     public UserCommand toCommand() {
-        return new UserCommand(userName, password, nickName, userGender, userPhone, userEmail, status, userRoles);
+        return new UserCommand(userName, password, nickName, userGender, userPhone, userEmail, status, userRoles,
+                deptId, postIds);
     }
 }

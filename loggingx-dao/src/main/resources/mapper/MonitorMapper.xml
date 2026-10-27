@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.loggingx.dao.monitor.MonitorMapper">
+
+    <resultMap id="config" type="com.loggingx.dao.monitor.MonitorConfig">
+        <constructor>
+            <idArg column="store_id" javaType="java.lang.Long"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="interval_seconds" javaType="_int"/>
+            <arg column="processes" javaType="_boolean"/>
+            <arg column="containers" javaType="_boolean"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="rule" type="com.loggingx.dao.monitor.AlertRule">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="metric" javaType="java.lang.String"/>
+            <arg column="threshold" javaType="_double"/>
+            <arg column="duration_minutes" javaType="_int"/>
+            <arg column="severity" javaType="java.lang.String"/>
+            <arg column="store_id" javaType="java.lang.Long"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="event" type="com.loggingx.dao.monitor.AlertEvent">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="rule_id" javaType="java.lang.Long"/>
+            <arg column="rule_name" javaType="java.lang.String"/>
+            <arg column="metric" javaType="java.lang.String"/>
+            <arg column="severity" javaType="java.lang.String"/>
+            <arg column="threshold" javaType="_double"/>
+            <arg column="store_id" javaType="java.lang.Long"/>
+            <arg column="hostname" javaType="java.lang.String"/>
+            <arg column="current_value" javaType="java.lang.Double"/>
+            <arg column="peak_value" javaType="java.lang.Double"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="started_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+            <arg column="resolved_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="eventColumns">
+        id, rule_id, rule_name, metric, severity, threshold, store_id, hostname, current_value, peak_value, status, started_at,
+        updated_at, resolved_at
+    </sql>
+
+    <!-- monitor config -->
+
+    <select id="selectConfig" resultMap="config">
+        SELECT store_id, enabled, interval_seconds, processes, containers, updated_at
+        FROM host_monitor_config WHERE store_id = #{storeId}
+    </select>
+
+    <update id="updateConfig">
+        UPDATE host_monitor_config
+        SET enabled          = #{config.enabled},
+            interval_seconds = #{config.intervalSeconds},
+            processes        = #{config.processes},
+            containers       = #{config.containers},
+            updated_at       = #{config.updatedAt}
+        WHERE store_id = #{config.storeId}
+    </update>
+
+    <insert id="insertConfig">
+        INSERT INTO host_monitor_config (store_id, enabled, interval_seconds, processes, containers, updated_at)
+        VALUES (#{config.storeId}, #{config.enabled}, #{config.intervalSeconds}, #{config.processes},
+                #{config.containers}, #{config.updatedAt})
+    </insert>
+
+    <!-- alert rules -->
+
+    <select id="selectRules" resultMap="rule">
+        SELECT id, name, metric, threshold, duration_minutes, severity, store_id, enabled, created_at, updated_at
+        FROM host_alert_rule ORDER BY id
+    </select>
+
+    <select id="selectRule" resultMap="rule">
+        SELECT id, name, metric, threshold, duration_minutes, severity, store_id, enabled, created_at, updated_at
+        FROM host_alert_rule WHERE id = #{id}
+    </select>
+
+    <insert id="insertRule" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO host_alert_rule (name, metric, threshold, duration_minutes, severity, store_id, enabled,
+                                     created_at, updated_at)
+        VALUES (#{rule.name}, #{rule.metric}, #{rule.threshold}, #{rule.durationMinutes}, #{rule.severity},
+                #{rule.storeId}, #{rule.enabled}, #{rule.createdAt}, #{rule.updatedAt})
+    </insert>
+
+    <update id="updateRule">
+        UPDATE host_alert_rule
+        SET name             = #{rule.name},
+            metric           = #{rule.metric},
+            threshold        = #{rule.threshold},
+            duration_minutes = #{rule.durationMinutes},
+            severity         = #{rule.severity},
+            store_id         = #{rule.storeId},
+            enabled          = #{rule.enabled},
+            updated_at       = #{rule.updatedAt}
+        WHERE id = #{rule.id}
+    </update>
+
+    <delete id="deleteRule">
+        DELETE FROM host_alert_rule WHERE id = #{id}
+    </delete>
+
+    <!-- alert events -->
+
+    <select id="selectFiringEvents" resultMap="event">
+        SELECT <include refid="eventColumns"/> FROM host_alert_event WHERE status = 'firing'
+    </select>
+
+    <select id="selectEvents" resultMap="event">
+        SELECT <include refid="eventColumns"/> FROM host_alert_event
+        <where>
+            <if test="status != null">status = #{status}</if>
+            <if test="storeId != null">AND store_id = #{storeId}</if>
+            <if test="host != null">AND hostname = #{host}</if>
+            <if test="since != null">AND (started_at &gt;= #{since} OR status = 'firing')</if>
+        </where>
+        ORDER BY CASE WHEN status = 'firing' THEN 0 ELSE 1 END, started_at DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertEvent" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO host_alert_event (rule_id, rule_name, metric, severity, threshold, store_id, hostname, current_value,
+                                      peak_value, status, started_at, updated_at, resolved_at)
+        VALUES (#{event.ruleId}, #{event.ruleName}, #{event.metric}, #{event.severity}, #{event.threshold},
+                #{event.storeId}, #{event.hostname}, #{event.value}, #{event.peakValue}, #{event.status},
+                #{event.startedAt}, #{event.updatedAt}, #{event.resolvedAt})
+    </insert>
+
+    <update id="updateEvent">
+        UPDATE host_alert_event
+        SET current_value = #{event.value},
+            peak_value  = #{event.peakValue},
+            status      = #{event.status},
+            updated_at  = #{event.updatedAt},
+            resolved_at = #{event.resolvedAt}
+        WHERE id = #{event.id}
+    </update>
+
+    <update id="resolveRuleEvents">
+        UPDATE host_alert_event SET status = 'resolved', resolved_at = #{at}, updated_at = #{at}
+        WHERE rule_id = #{ruleId} AND status = 'firing'
+    </update>
+
+    <delete id="deleteEventsBefore">
+        DELETE FROM host_alert_event WHERE status = 'resolved' AND resolved_at &lt; #{before}
+    </delete>
+</mapper>

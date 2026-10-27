@@ -2,9 +2,11 @@ package com.loggingx.dao.support;
 
 import com.loggingx.dao.account.MybatisUserAccountRepository;
 import com.loggingx.dao.account.UserAccount;
+import com.loggingx.dao.dept.Dept;
 import com.loggingx.dao.menu.Menu;
 import com.loggingx.dao.menu.MenuType;
 import com.loggingx.dao.menu.MybatisMenuRepository;
+import com.loggingx.dao.post.Post;
 import com.loggingx.dao.role.MybatisRoleRepository;
 import com.loggingx.dao.role.Role;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -50,6 +53,43 @@ class MybatisRepositoryTest {
         assertEquals(saved, userAccountRepository.findByUsername("alice").orElseThrow());
         assertTrue(userAccountRepository.findByUsername("ALICE").isEmpty());
         assertTrue(userAccountRepository.insert(account).isEmpty());
+    }
+
+    @Test
+    void userDepartmentAndPostsRoundTripAndSync() {
+        Long rnd = insertDept("R&D");
+        Long sales = insertDept("Sales");
+        Long dev = insertPost("DEV");
+        Long lead = insertPost("LEAD");
+        UserAccount account = new UserAccount(null, "alice", "hash", 0, "Alice", null, null, null, null,
+                UserAccount.STATUS_ONLINE, Set.of(), rnd, Set.of(dev), CREATED, "system", CREATED, null);
+
+        UserAccount saved = userAccountRepository.insert(account).orElseThrow();
+        assertEquals(account.withId(saved.id()), userAccountRepository.findById(saved.id()).orElseThrow());
+        assertTrue(userAccountRepository.existsInDept(rnd));
+        assertTrue(userAccountRepository.existsWithPost(dev));
+
+        UserAccount moved = saved.withDeptId(sales).withPostIds(Set.of(lead));
+        assertEquals(UpdateResult.UPDATED, userAccountRepository.update(saved, moved));
+        assertEquals(moved, userAccountRepository.findByUsername("alice").orElseThrow());
+        assertEquals(List.of(moved), userAccountRepository.findAll());
+        assertFalse(userAccountRepository.existsInDept(rnd));
+        assertFalse(userAccountRepository.existsWithPost(dev));
+
+        UserAccount detached = moved.withDeptId(null).withPostIds(Set.of());
+        assertEquals(UpdateResult.UPDATED, userAccountRepository.update(moved, detached));
+        assertEquals(detached, userAccountRepository.findById(saved.id()).orElseThrow());
+        assertFalse(userAccountRepository.existsInDept(sales));
+    }
+
+    private Long insertDept(String name) {
+        return database.deptRepository.insert(
+                new Dept(null, Dept.ROOT_PARENT_ID, name, 0, null, null, null, true, CREATED, CREATED)).orElseThrow().id();
+    }
+
+    private Long insertPost(String code) {
+        return database.postRepository.insert(
+                new Post(null, code, code, 0, true, null, CREATED, CREATED)).orElseThrow().id();
     }
 
     @Test

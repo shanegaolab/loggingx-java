@@ -9,7 +9,8 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * Accounts are mapped without roles; the roles come from {@link #selectRoleLinks}.
+ * Accounts are mapped without roles, department or posts; those come from {@link #selectRoleLinks},
+ * {@link #selectDeptLinks} and {@link #selectPostLinks}.
  */
 @Mapper
 public interface UserAccountMapper {
@@ -34,4 +35,26 @@ public interface UserAccountMapper {
     void deleteRoleLinks(@Param("userId") Long userId, @Param("roleIds") Collection<Long> roleIds);
 
     void insertRoleLinks(@Param("userId") Long userId, @Param("roleIds") Collection<Long> roleIds);
+
+    /**
+     * @param userIds the users whose department to read, or {@code null} for every user
+     */
+    List<Link> selectDeptLinks(@Param("userIds") Collection<Long> userIds);
+
+    void deleteDeptLinks(@Param("userId") Long userId, @Param("deptIds") Collection<Long> deptIds);
+
+    void insertDeptLinks(@Param("userId") Long userId, @Param("deptIds") Collection<Long> deptIds);
+
+    /**
+     * @param userIds the users whose posts to read, or {@code null} for every user
+     */
+    List<Link> selectPostLinks(@Param("userIds") Collection<Long> userIds);
+
+    void deletePostLinks(@Param("userId") Long userId, @Param("postIds") Collection<Long> postIds);
+
+    void insertPostLinks(@Param("userId") Long userId, @Param("postIds") Collection<Long> postIds);
+
+    boolean existsInDept(@Param("deptId") Long deptId);
+
+    boolean existsWithPost(@Param("postId") Long postId);
 }

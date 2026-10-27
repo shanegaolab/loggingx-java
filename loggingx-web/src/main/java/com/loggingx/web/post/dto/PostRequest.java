@@ -5,7 +5,10 @@ import com.loggingx.biz.post.PostCommand;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+
+import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record PostRequest(
@@ -20,10 +23,12 @@ public record PostRequest(
         Integer sort,
         boolean enabled,
         @Size(max = 200, message = "remark must be at most 200 characters")
-        String remark
+        String remark,
+        // Optional: null or empty makes the post apply to every department.
+        List<@NotNull Long> deptIds
 ) {
 
     public PostCommand toCommand() {
-        return new PostCommand(postCode, postName, sort == null ? 0 : sort, enabled, remark);
+        return new PostCommand(postCode, postName, sort == null ? 0 : sort, enabled, remark, deptIds);
     }
 }

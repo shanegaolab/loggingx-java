@@ -3,10 +3,13 @@ package com.loggingx.biz.dept;
 import com.loggingx.common.exception.BadRequestException;
 import com.loggingx.common.exception.ConflictException;
 import com.loggingx.dao.dept.Dept;
+import com.loggingx.dao.post.Post;
 import com.loggingx.dao.support.TestDatabase;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -15,7 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DeptServiceTest {
 
     private final TestDatabase database = new TestDatabase();
-    private final DeptService service = new DeptService(database.deptRepository);
+    private final DeptService service = new DeptService(database.deptRepository, database.userAccountRepository,
+            database.postRepository);
 
     private Long create(Long parentId, String name, int sort) {
         return service.create(new DeptCommand(parentId, name, sort, null, null, null, true)).id();
@@ -90,6 +94,19 @@ class DeptServiceTest {
         service.delete(rnd, "super");
         service.delete(company, "super");
         assertTrue(service.tree(new DeptQuery(null, null)).isEmpty());
+    }
+
+    @Test
+    void departmentThatPostsAreRestrictedToCannotBeDeleted() {
+        Long rnd = create(null, "R&D", 1);
+        Instant now = Instant.now();
+        Post post = database.postRepository.insert(new Post(null, "DEV", "Developer", 1, true, null, Set.of(rnd),
+                now, now)).orElseThrow();
+
+        assertThrows(BadRequestException.class, () -> service.delete(rnd, "super"));
+
+        database.postRepository.update(post, post.withDeptIds(Set.of()));
+        service.delete(rnd, "super");
     }
 
     @Test

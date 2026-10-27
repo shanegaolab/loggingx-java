@@ -78,6 +78,16 @@ spring:
       connect-timeout: 3s
       # Keeps a slow or unreachable Redis from stalling logins for long.
       timeout: 2s
+  # Kafka connection for KafkaLogListener, which only runs when loggingx.log.kafka.enabled is true.
+  kafka:
+    bootstrap-servers: ${LOGGINGX_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      # A new consumer group starts at the newest messages rather than replaying the topic's history.
+      auto-offset-reset: ${LOGGINGX_KAFKA_AUTO_OFFSET_RESET:latest}
+      max-poll-records: 500
+    admin:
+      # The application creates no topics, so it never needs to reach Kafka unless the consumer is enabled.
+      auto-create: false
 
 mybatis:
   mapper-locations: classpath*:mapper/*.xml
@@ -99,6 +109,53 @@ loggingx:
     super-admin:
       username: ${LOGGINGX_BOOTSTRAP_ADMIN_USERNAME:superuser}
       password: ${LOGGINGX_BOOTSTRAP_ADMIN_PASSWORD:}
+  log:
+    # Where log lines are kept: clickhouse, or memory (lost on restart; for local runs without ClickHouse).
+    storage: ${LOGGINGX_LOG_STORAGE:clickhouse}
+    memory:
+      capacity-per-store: 50000
+    # Daily cleanup of expired logs and of deleted stores' logs (second minute hour day month weekday).
+    retention-cron: "0 30 3 * * *"
+    tail:
+      # How often the live view looks for new logs, and how old a log must be before it is shown, giving inserts
+      # still in flight on other instances time to land.
+      poll-interval: 1000
+      settle-delay: 2s
+    kafka:
+      # Consume logs that collector agents publish to Kafka (see spring.kafka for the connection).
+      enabled: ${LOGGINGX_KAFKA_ENABLED:false}
+      # Comma-separated.
+      topics: ${LOGGINGX_KAFKA_TOPICS:loggingx-logs}
+      group-id: ${LOGGINGX_KAFKA_GROUP_ID:loggingx}
+  # Log line storage when loggingx.log.storage is clickhouse; the database must exist, the table is created.
+  clickhouse:
+    url: ${LOGGINGX_CLICKHOUSE_URL:jdbc:clickhouse://localhost:8123/loggingx}
+    username: ${LOGGINGX_CLICKHOUSE_USERNAME:default}
+    password: ${LOGGINGX_CLICKHOUSE_PASSWORD:}
+    pool-size: ${LOGGINGX_CLICKHOUSE_POOL_SIZE:5}
+  # Log archiving to S3-compatible storage (configured on the backup page), see docs/backup.md.
+  backup:
+    # Daily archive run, before the log retention cleanup (second minute hour day month weekday).
+    cron: ${LOGGINGX_BACKUP_CRON:0 30 2 * * *}
+    # Encrypts the stored secret key and signs download links; changing it requires entering the secret key again.
+    secret: ${LOGGINGX_BACKUP_SECRET:${loggingx.security.jwt.secret}}
+  # Host resource monitoring by the agents, stored like the logs (loggingx.log.storage).
+  monitor:
+    # Days host metrics are kept (busy processes at most 3 days).
+    retention-days: ${LOGGINGX_MONITOR_RETENTION_DAYS:15}
+    # How often alert rules are evaluated, in milliseconds.
+    alert-interval: 60000
+  # The log collection agent (Vector) deployed from the agent page, see AgentProperties.
+  agent:
+    version: ${LOGGINGX_AGENT_VERSION:0.58.0}
+    # Packages are served from package-dir when mirrored there (for hosts without internet access), otherwise
+    # downloaded from the upstream release.
+    upstream-url: ${LOGGINGX_AGENT_UPSTREAM_URL:https://github.com/vectordotdev/vector/releases/download}
+    package-dir: ${LOGGINGX_AGENT_PACKAGE_DIR:}
+    # Container image for Docker and Kubernetes; defaults to timberio/vector:<version>-alpine.
+    image: ${LOGGINGX_AGENT_IMAGE:}
+    # How agents reach LoggingX, e.g. https://logs.example.com; defaults to the address the agent page is opened at.
+    server-url: ${LOGGINGX_AGENT_SERVER_URL:}
 api:
   prefix: /api
 

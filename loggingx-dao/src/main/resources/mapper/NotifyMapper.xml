@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.loggingx.dao.notify.NotifyMapper">
+
+    <resultMap id="channel" type="com.loggingx.dao.notify.NotifyChannel">
+        <constructor>
+            <idArg column="channel" javaType="java.lang.String"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="config" javaType="java.lang.String"/>
+            <arg column="secret" javaType="java.lang.String"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="group" type="com.loggingx.dao.notify.NotifyGroup">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="user_ids" javaType="java.lang.String"/>
+            <arg column="contacts" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="ruleNotify" type="com.loggingx.dao.notify.AlertNotify">
+        <constructor>
+            <arg column="rule_type" javaType="java.lang.String"/>
+            <arg column="rule_id" javaType="java.lang.Long"/>
+            <arg column="channels" javaType="java.lang.String"/>
+            <arg column="user_ids" javaType="java.lang.String"/>
+            <arg column="group_ids" javaType="java.lang.String"/>
+            <arg column="notify_resolved" javaType="_boolean"/>
+            <arg column="repeat_minutes" javaType="_int"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="record" type="com.loggingx.dao.notify.NotifyRecord">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="event_type" javaType="java.lang.String"/>
+            <arg column="event_id" javaType="java.lang.Long"/>
+            <arg column="rule_name" javaType="java.lang.String"/>
+            <arg column="kind" javaType="java.lang.String"/>
+            <arg column="channel" javaType="java.lang.String"/>
+            <arg column="recipient" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="error" javaType="java.lang.String"/>
+            <arg column="sent_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <!-- channels -->
+
+    <select id="selectChannel" resultMap="channel">
+        SELECT channel, enabled, config, secret, updated_at FROM notify_channel WHERE channel = #{channel}
+    </select>
+
+    <update id="updateChannel">
+        UPDATE notify_channel
+        SET enabled    = #{value.enabled},
+            config     = #{value.config},
+            secret     = #{value.secret},
+            updated_at = #{value.updatedAt}
+        WHERE channel = #{value.channel}
+    </update>
+
+    <insert id="insertChannel">
+        INSERT INTO notify_channel (channel, enabled, config, secret, updated_at)
+        VALUES (#{value.channel}, #{value.enabled}, #{value.config}, #{value.secret}, #{value.updatedAt})
+    </insert>
+
+    <!-- groups -->
+
+    <select id="selectGroups" resultMap="group">
+        SELECT id, name, description, user_ids, contacts, created_at, updated_at FROM notify_group ORDER BY id
+    </select>
+
+    <select id="selectGroup" resultMap="group">
+        SELECT id, name, description, user_ids, contacts, created_at, updated_at FROM notify_group WHERE id = #{id}
+    </select>
+
+    <insert id="insertGroup" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO notify_group (name, description, user_ids, contacts, created_at, updated_at)
+        VALUES (#{group.name}, #{group.description}, #{group.userIds}, #{group.contacts}, #{group.createdAt},
+                #{group.updatedAt})
+    </insert>
+
+    <update id="updateGroup">
+        UPDATE notify_group
+        SET name        = #{group.name},
+            description = #{group.description},
+            user_ids    = #{group.userIds},
+            contacts    = #{group.contacts},
+            updated_at  = #{group.updatedAt}
+        WHERE id = #{group.id}
+    </update>
+
+    <delete id="deleteGroup">
+        DELETE FROM notify_group WHERE id = #{id}
+    </delete>
+
+    <!-- rule notification -->
+
+    <select id="selectRuleNotify" resultMap="ruleNotify">
+        SELECT rule_type, rule_id, channels, user_ids, group_ids, notify_resolved, repeat_minutes
+        FROM alert_notify WHERE rule_type = #{ruleType} AND rule_id = #{ruleId}
+    </select>
+
+    <select id="selectRuleNotifies" resultMap="ruleNotify">
+        SELECT rule_type, rule_id, channels, user_ids, group_ids, notify_resolved, repeat_minutes
+        FROM alert_notify WHERE rule_type = #{ruleType}
+    </select>
+
+    <update id="updateRuleNotify">
+        UPDATE alert_notify
+        SET channels        = #{value.channels},
+            user_ids        = #{value.userIds},
+            group_ids       = #{value.groupIds},
+            notify_resolved = #{value.notifyResolved},
+            repeat_minutes  = #{value.repeatMinutes}
+        WHERE rule_type = #{value.ruleType} AND rule_id = #{value.ruleId}
+    </update>
+
+    <insert id="insertRuleNotify">
+        INSERT INTO alert_notify (rule_type, rule_id, channels, user_ids, group_ids, notify_resolved, repeat_minutes)
+        VALUES (#{value.ruleType}, #{value.ruleId}, #{value.channels}, #{value.userIds}, #{value.groupIds},
+                #{value.notifyResolved}, #{value.repeatMinutes})
+    </insert>
+
+    <delete id="deleteRuleNotify">
+        DELETE FROM alert_notify WHERE rule_type = #{ruleType} AND rule_id = #{ruleId}
+    </delete>
+
+    <!-- records -->
+
+    <insert id="insertRecord">
+        INSERT INTO notify_record (event_type, event_id, rule_name, kind, channel, recipient, status, error, sent_at)
+        VALUES (#{record.eventType}, #{record.eventId}, #{record.ruleName}, #{record.kind}, #{record.channel},
+                #{record.recipient}, #{record.status}, #{record.error}, #{record.sentAt})
+    </insert>
+
+    <select id="selectRecords" resultMap="record">
+        SELECT id, event_type, event_id, rule_name, kind, channel, recipient, status, error, sent_at
+        FROM notify_record
+        <where>
+            <if test="eventType != null">event_type = #{eventType}</if>
+            <if test="eventId != null">AND event_id = #{eventId}</if>
+        </where>
+        ORDER BY sent_at DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectLastSent" resultType="java.time.Instant">
+        SELECT MAX(sent_at) FROM notify_record WHERE event_type = #{eventType} AND event_id = #{eventId}
+    </select>
+
+    <delete id="deleteRecordsBefore">
+        DELETE FROM notify_record WHERE sent_at &lt; #{before}
+    </delete>
+</mapper>

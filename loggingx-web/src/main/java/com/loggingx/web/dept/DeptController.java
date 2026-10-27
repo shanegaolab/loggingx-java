@@ -22,7 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * Department management. Every endpoint requires access to the department management menu.
+ * Department management. Every endpoint except {@link #options()} requires access to the department management
+ * menu.
  */
 @RestController
 @RequestMapping("/dept")
@@ -38,6 +39,17 @@ public class DeptController {
     @GetMapping("/tree")
     public ApiResponse<List<DeptResponse>> tree(DeptQuery query) {
         return ApiResponse.success(deptService.tree(query).stream().map(DeptResponse::from).toList());
+    }
+
+    /**
+     * The whole department tree for selection lists, such as the department pickers in the user and post dialogs,
+     * so user and post managers can use it too. Disabled departments are included so current ones can still be shown.
+     */
+    @GetMapping("/options")
+    @PreAuthorize("@permissionService.hasAnyMenu(authentication, 'User', 'Dept', 'Post')")
+    public ApiResponse<List<DeptResponse>> options() {
+        return ApiResponse.success(deptService.tree(new DeptQuery(null, null)).stream()
+                .map(DeptResponse::from).toList());
     }
 
     @PostMapping

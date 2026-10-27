@@ -49,4 +49,28 @@
     <delete id="deleteById">
         DELETE FROM sys_post WHERE id = #{id}
     </delete>
+
+    <select id="selectDeptLinks" resultType="com.loggingx.dao.support.Link">
+        SELECT post_id AS owner_id, dept_id AS member_id FROM sys_post_dept
+        <where>
+            <if test="postIds != null">
+                post_id IN <foreach collection="postIds" item="postId" open="(" separator="," close=")">#{postId}</foreach>
+            </if>
+        </where>
+    </select>
+
+    <delete id="deleteDeptLinks">
+        DELETE FROM sys_post_dept
+        WHERE post_id = #{postId}
+          AND dept_id IN <foreach collection="deptIds" item="deptId" open="(" separator="," close=")">#{deptId}</foreach>
+    </delete>
+
+    <insert id="insertDeptLinks">
+        INSERT INTO sys_post_dept (post_id, dept_id) VALUES
+        <foreach collection="deptIds" item="deptId" separator=",">(#{postId}, #{deptId})</foreach>
+    </insert>
+
+    <select id="existsForDept" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM sys_post_dept WHERE dept_id = #{deptId})
+    </select>
 </mapper>

@@ -28,6 +28,7 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new OperationAuditInterceptor());
+        // Log producers call the ingest endpoint continuously; auditing each call would flood the application log.
+        registry.addInterceptor(new OperationAuditInterceptor()).excludePathPatterns(apiPrefix + "/logs/ingest");
     }
 }

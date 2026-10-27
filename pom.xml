@@ -37,6 +37,7 @@
         <jedis-mock.version>1.1.19</jedis-mock.version>
         <!-- 2.0.x targets Spring Boot 4. -->
         <spring-ai.version>2.0.1</spring-ai.version>
+        <clickhouse-jdbc.version>0.10.0</clickhouse-jdbc.version>
     </properties>
 
     <dependencyManagement>
@@ -69,6 +70,13 @@
                 <groupId>org.mybatis.spring.boot</groupId>
                 <artifactId>mybatis-spring-boot-starter</artifactId>
                 <version>${mybatis-spring-boot.version}</version>
+            </dependency>
+            <!-- The "all" jar shades the driver's own dependencies, so they cannot clash with the application's. -->
+            <dependency>
+                <groupId>com.clickhouse</groupId>
+                <artifactId>clickhouse-jdbc</artifactId>
+                <version>${clickhouse-jdbc.version}</version>
+                <classifier>all</classifier>
             </dependency>
             <!-- In-process Redis server for tests; Docker is not required. -->
             <dependency>

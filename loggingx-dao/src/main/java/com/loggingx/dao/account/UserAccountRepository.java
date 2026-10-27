@@ -10,4 +10,14 @@ import java.util.Optional;
 public interface UserAccountRepository extends EntityRepository<UserAccount> {
 
     Optional<UserAccount> findByUsername(String username);
+
+    /**
+     * @return whether any user belongs to the department
+     */
+    boolean existsInDept(Long deptId);
+
+    /**
+     * @return whether any user holds the post
+     */
+    boolean existsWithPost(Long postId);
 }

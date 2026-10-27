@@ -5,8 +5,10 @@ import com.loggingx.biz.support.Updates;
 import com.loggingx.common.exception.BadRequestException;
 import com.loggingx.common.exception.ConflictException;
 import com.loggingx.common.exception.NotFoundException;
+import com.loggingx.dao.account.UserAccountRepository;
 import com.loggingx.dao.dept.Dept;
 import com.loggingx.dao.dept.DeptRepository;
+import com.loggingx.dao.post.PostRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,8 +22,8 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * Department administration. Departments form a tree; a department with child departments cannot be deleted, and
- * none can be moved below itself.
+ * Department administration. Departments form a tree; a department with child departments, users or posts
+ * restricted to it cannot be deleted, and none can be moved below itself.
  */
 @Service
 public class DeptService {
@@ -31,9 +33,14 @@ public class DeptService {
     private static final Comparator<Dept> ORDER = Comparator.comparingInt(Dept::sort).thenComparing(Dept::id);
 
     private final DeptRepository deptRepository;
+    private final UserAccountRepository userAccountRepository;
+    private final PostRepository postRepository;
 
-    public DeptService(DeptRepository deptRepository) {
+    public DeptService(DeptRepository deptRepository, UserAccountRepository userAccountRepository,
+                       PostRepository postRepository) {
         this.deptRepository = deptRepository;
+        this.userAccountRepository = userAccountRepository;
+        this.postRepository = postRepository;
     }
 
     /**
@@ -79,6 +86,12 @@ public class DeptService {
         Dept dept = requireDept(id);
         if (deptRepository.findAll().stream().anyMatch(other -> other.parentId().equals(id))) {
             throw new BadRequestException("Delete the child departments first");
+        }
+        if (userAccountRepository.existsInDept(id)) {
+            throw new BadRequestException("Move the department's users to another department first");
+        }
+        if (postRepository.existsForDept(id)) {
+            throw new BadRequestException("Remove the department from the posts restricted to it first");
         }
         deptRepository.deleteById(id);
         log.info("event=dept.delete.success operator={} deptId={} deptName={}", operatorUsername, id, dept.name());
