@@ -94,6 +94,20 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <skip>false</skip>
+                    <!-- The ClickHouse client loads a native LZ4 library; without this Java 25 warns at startup. -->
+                    <jvmArguments>--enable-native-access=ALL-UNNAMED</jvmArguments>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-war-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <!-- Same for java -jar loggingx.war; under Tomcat the flag goes in CATALINA_OPTS (see README). -->
+                        <manifestEntries>
+                            <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                        </manifestEntries>
+                    </archive>
                 </configuration>
             </plugin>
         </plugins>

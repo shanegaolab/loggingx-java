@@ -2,6 +2,8 @@
 
 LoggingX 是一个基于 Spring Boot 4.1、Spring Security 7 和 Java 25 的智能日志分析平台后端。
 
+官网：<https://loggingx.com> · GitHub：<https://github.com/shanegaolab/loggingx>
+
 ## 模块结构
 
 ```text
@@ -38,6 +40,8 @@ mvn -pl loggingx-web spring-boot:test-run -Dspring-boot.run.profiles=dev
 
 可覆盖的配置均以 `LOGGINGX_` 开头，完整列表及默认值见 [`.env.example`](.env.example)。除系统环境变量外，也可把它复制为启动工作目录下的 `.env`（已被 git 忽略），取消注释并填写需要的项；同名系统环境变量优先。`.env` 按 Java properties 格式读取：值不加引号，未注释的空值会覆盖默认值。
 
+在 IntelliJ IDEA 中直接选择运行配置 **LoggingX (.env)**（位于 `.run/LoggingX.run.xml`，打开项目后自动加载）：工作目录为项目根目录，启动时即读取根目录的 `.env`。
+
 ### 部署到外部 Tomcat
 
 `loggingx-web` 打包为 WAR，Tomcat 相关依赖为 `provided`，不会与容器自带的 Tomcat 冲突：
@@ -55,6 +59,8 @@ mvn clean package
 ```shell
 export LOGGINGX_JWT_SECRET=your-long-random-secret
 export LOGGINGX_BOOTSTRAP_ADMIN_PASSWORD=your-password
+# ClickHouse 客户端会加载本地 LZ4 库，Java 25 下不加此参数启动时会打印 restricted method 警告
+export CATALINA_OPTS="$CATALINA_OPTS --enable-native-access=ALL-UNNAMED"
 ```
 
 日志输出到 Tomcat 的控制台日志（`logs/catalina.out` 或 `catalina.*.log`）。打包出的 WAR 也可以直接 `java -jar loggingx.war` 用内嵌 Tomcat 运行。
@@ -119,14 +125,18 @@ LOGGINGX_TEST_CLICKHOUSE_URL=jdbc:clickhouse://host:8123/loggingx LOGGINGX_TEST_
 - `GET`/`DELETE /api/agent/sync`：Agent 同步与注销，凭请求头 `X-Agent-Id`、`X-Agent-Secret` 访问（首次带 `X-Log-Token` 登记）。
 - `/api/agent/download/<安装包>`：公开。
 
-**日志备份**：开启归档的日志库，每天把超过 N 天的日志按天压缩为 `.ndjson.gz` 上传到 S3 兼容对象存储（MinIO / OSS / COS / S3），归档按保留天数自动清理；**先归档、再删除**：未归档成功的日期不会被保留清理删除。归档可下载或恢复回日志库查询，详见 [docs/backup.md](docs/backup.md)。相关接口（一级菜单「备份管理」）：`/api/backup/storage`（配置与测试连接）、`/api/backup/policies`、`/api/backup/archives`（含 `/{id}/restore`、`/{id}/download-link`）、`POST /api/backup/run`、`GET /api/backup/status`；`GET /api/backup/download/<签名>` 凭 10 分钟有效的签名下载。新建 / 编辑日志库时可带 `backup` 一起设置归档，`DELETE /api/logstore/{id}?deleteArchives=true` 同时删除归档。
+**日志备份**：开启归档的日志库，每天把超过 N 天的日志按天压缩为 `.ndjson.gz` 上传到 S3 兼容对象存储（MinIO / OSS / COS / S3），归档按保留天数自动清理；**先归档、再删除**：未归档成功的日期不会被保留清理删除。归档可下载或恢复回日志库查询，详见 [docs/backup.md](docs/backup.md)。相关接口（一级菜单「备份管理」，分「归档策略」「归档记录」两个页面）：`/api/backup/storage`（配置与测试连接）、`/api/backup/policies`、`/api/backup/archives`（含 `/{id}/restore`、`/{id}/download-link`）、`POST /api/backup/run`、`GET /api/backup/status`；`GET /api/backup/download/<签名>` 凭 10 分钟有效的签名下载。新建 / 编辑日志库时可带 `backup` 一起设置归档，`DELETE /api/logstore/{id}?deleteArchives=true` 同时删除归档。
 
 **主机监控**：Agent 同时采集所在主机的 CPU、内存、磁盘、网络、负载、进程 Top 和容器资源（在采集配置中开关），「监控中心」提供主机列表、趋势图、阈值告警（规则与通知在一级菜单「告警中心」），并与日志查询互相跳转，详见 [docs/agent.md#主机监控](docs/agent.md#主机监控)。相关接口：
 - `POST /api/metrics/ingest`：Agent 上报指标（Vector `host_metrics` 经 `metric_to_log` 后的 JSON，可 gzip），凭 `X-Log-Token`。
 - `GET /api/monitor/hosts`、`/api/monitor/hosts/series`、`/filesystems`、`/processes`、`/containers`、`/api/monitor/alerts`：「主机监控」或「告警中心」菜单可访问。
-- `/api/monitor/alert-rules`：查看同上；增删改需「告警中心」菜单。
+- `/api/monitor/alert-rules`：查看同上；增删改需「告警中心 → 告警规则」菜单。
 
-**告警与通知**：「告警中心」（一级菜单）分为**日志告警**（时间窗口内匹配级别 / 关键字的日志条数超过阈值）和**监控告警**（主机资源阈值、Agent 离线），每条规则可选择**邮件**（SMTP）和/或**短信**（阿里云或腾讯云，页面中选择）通知系统用户与通知组，支持恢复通知、重复提醒、测试发送和通知记录。SMTP 密码与短信密钥加密存库。详见 [docs/alerting.md](docs/alerting.md)；接口为 `/api/alert-center/*`（需「告警中心」菜单）。
+**日志库权限**：「系统管理 → 角色管理」里每个角色可设置「日志库权限」：全部日志库（默认，包括以后新建的），或指定的几个日志库。用户能访问的日志库是其所有启用角色的并集，超级管理员始终可以访问全部。日志查询、实时日志、采集 Agent、主机监控、告警中心、备份管理、AI 诊断和仪表盘都只显示可访问的日志库；请求中带 `storeId` 参数的接口统一由 `StoreAccessInterceptor` 校验，越权返回 403。新建、删除日志库和作用于全部日志库的监控告警规则需要「全部日志库」权限；管理员只能把自己能访问的日志库分配给角色。接口：`GET|PUT /api/role/{id}/log-stores`、`GET /api/role/log-store-options`。
+
+**AI 运维**：「智能问答」用自然语言提问（如「订单服务为什么一直报错」），AI 检索知识库、历史诊断、错误归类、告警、错误日志和代码后回答并标注出处（RAG）；「AI 诊断」在日志库关联 Git 代码仓库后，新出现的错误类型、日志告警或手动选择的错误日志会连同堆栈指向的源代码一起交给 AI 模型，给出原因分析、修改建议和 diff，结果在一级菜单「AI 运维」查看，并通过顶栏通知和邮件 / 短信提醒。需要服务器安装 `git` 并配置 AI 提供方的 API Key，详见 [docs/ai-diagnosis.md](docs/ai-diagnosis.md)。
+
+**告警与通知**：「告警中心」（一级菜单，分「告警事件」「告警规则」「通知管理」三个页面）分为**日志告警**（时间窗口内匹配级别 / 关键字的日志条数超过阈值）和**监控告警**（主机资源阈值、Agent 离线），每条规则可选择**邮件**（SMTP）和/或**短信**（阿里云或腾讯云，页面中选择）通知系统用户与通知组，支持恢复通知、重复提醒、测试发送和通知记录。SMTP 密码与短信密钥加密存库。详见 [docs/alerting.md](docs/alerting.md)；接口为 `/api/alert-center/*`（按页面授权，见文档）。
 
 两种方式，消息格式相同（`LogPayloads`）：请求体为日志数组、`{"logstore": "<编码>", "logs": [...]}` 或单条日志。单条日志是扁平 JSON 对象：
 

@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.loggingx.dao.ai.AiMapper">
+
+    <resultMap id="settings" type="com.loggingx.dao.ai.AiSettings">
+        <constructor>
+            <arg column="provider" javaType="java.lang.String"/>
+            <arg column="model" javaType="java.lang.String"/>
+            <arg column="daily_limit" javaType="_int"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="storeConfig" type="com.loggingx.dao.ai.AiStoreConfig">
+        <constructor>
+            <idArg column="store_id" javaType="java.lang.Long"/>
+            <arg column="repo_url" javaType="java.lang.String"/>
+            <arg column="repo_branch" javaType="java.lang.String"/>
+            <arg column="repo_username" javaType="java.lang.String"/>
+            <arg column="repo_secret" javaType="java.lang.String"/>
+            <arg column="auto_new" javaType="_boolean"/>
+            <arg column="on_alert" javaType="_boolean"/>
+            <arg column="scanned_until" javaType="java.time.Instant"/>
+            <arg column="repo_commit" javaType="java.lang.String"/>
+            <arg column="repo_synced_at" javaType="java.time.Instant"/>
+            <arg column="repo_error" javaType="java.lang.String"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="group" type="com.loggingx.dao.ai.ErrorGroup">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="store_id" javaType="java.lang.Long"/>
+            <arg column="fingerprint" javaType="java.lang.String"/>
+            <arg column="error_type" javaType="java.lang.String"/>
+            <arg column="location" javaType="java.lang.String"/>
+            <arg column="sample" javaType="java.lang.String"/>
+            <arg column="host" javaType="java.lang.String"/>
+            <arg column="occurrences" javaType="_long"/>
+            <arg column="first_seen" javaType="java.time.Instant"/>
+            <arg column="last_seen" javaType="java.time.Instant"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="diagnosis_id" javaType="java.lang.Long"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="diagnosis" type="com.loggingx.dao.ai.AiDiagnosis">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="store_id" javaType="java.lang.Long"/>
+            <arg column="group_id" javaType="java.lang.Long"/>
+            <arg column="trigger_type" javaType="java.lang.String"/>
+            <arg column="alert_event_id" javaType="java.lang.Long"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="review_state" javaType="java.lang.String"/>
+            <arg column="error_type" javaType="java.lang.String"/>
+            <arg column="log_text" javaType="java.lang.String"/>
+            <arg column="host" javaType="java.lang.String"/>
+            <arg column="source" javaType="java.lang.String"/>
+            <arg column="log_time" javaType="java.time.Instant"/>
+            <arg column="repo_commit" javaType="java.lang.String"/>
+            <arg column="code_refs" javaType="java.lang.String"/>
+            <arg column="provider" javaType="java.lang.String"/>
+            <arg column="model" javaType="java.lang.String"/>
+            <arg column="summary" javaType="java.lang.String"/>
+            <arg column="root_cause" javaType="java.lang.String"/>
+            <arg column="suggestion" javaType="java.lang.String"/>
+            <arg column="diff" javaType="java.lang.String"/>
+            <arg column="confidence" javaType="java.lang.String"/>
+            <arg column="prompt_tokens" javaType="java.lang.Integer"/>
+            <arg column="completion_tokens" javaType="java.lang.Integer"/>
+            <arg column="error" javaType="java.lang.String"/>
+            <arg column="created_by" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="finished_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="diagnosisColumns">
+        id, store_id, group_id, trigger_type, alert_event_id, status, review_state, error_type, log_text, host,
+        source, log_time, repo_commit, code_refs, provider, model, summary, root_cause, suggestion, diff, confidence,
+        prompt_tokens, completion_tokens, error, created_by, created_at, finished_at
+    </sql>
+
+    <!-- settings -->
+
+    <select id="selectSettings" resultMap="settings">
+        SELECT provider, model, daily_limit, updated_at FROM ai_settings WHERE id = 1
+    </select>
+
+    <update id="updateSettings">
+        UPDATE ai_settings
+        SET provider = #{value.provider}, model = #{value.model}, daily_limit = #{value.dailyLimit},
+            updated_at = #{value.updatedAt}
+        WHERE id = 1
+    </update>
+
+    <insert id="insertSettings">
+        INSERT INTO ai_settings (id, provider, model, daily_limit, updated_at)
+        VALUES (1, #{value.provider}, #{value.model}, #{value.dailyLimit}, #{value.updatedAt})
+    </insert>
+
+    <!-- store configs -->
+
+    <select id="selectStoreConfig" resultMap="storeConfig">
+        SELECT store_id, repo_url, repo_branch, repo_username, repo_secret, auto_new, on_alert, scanned_until,
+               repo_commit, repo_synced_at, repo_error, updated_at
+        FROM ai_store_config WHERE store_id = #{storeId}
+    </select>
+
+    <select id="selectStoreConfigs" resultMap="storeConfig">
+        SELECT store_id, repo_url, repo_branch, repo_username, repo_secret, auto_new, on_alert, scanned_until,
+               repo_commit, repo_synced_at, repo_error, updated_at
+        FROM ai_store_config ORDER BY store_id
+    </select>
+
+    <update id="updateStoreConfig">
+        UPDATE ai_store_config
+        SET repo_url = #{value.repoUrl}, repo_branch = #{value.repoBranch}, repo_username = #{value.repoUsername},
+            repo_secret = #{value.repoSecret}, auto_new = #{value.autoNew}, on_alert = #{value.onAlert},
+            scanned_until = #{value.scannedUntil}, repo_commit = #{value.repoCommit},
+            repo_synced_at = #{value.repoSyncedAt}, repo_error = #{value.repoError}, updated_at = #{value.updatedAt}
+        WHERE store_id = #{value.storeId}
+    </update>
+
+    <insert id="insertStoreConfig">
+        INSERT INTO ai_store_config (store_id, repo_url, repo_branch, repo_username, repo_secret, auto_new, on_alert,
+                                     scanned_until, repo_commit, repo_synced_at, repo_error, updated_at)
+        VALUES (#{value.storeId}, #{value.repoUrl}, #{value.repoBranch}, #{value.repoUsername}, #{value.repoSecret},
+                #{value.autoNew}, #{value.onAlert}, #{value.scannedUntil}, #{value.repoCommit},
+                #{value.repoSyncedAt}, #{value.repoError}, #{value.updatedAt})
+    </insert>
+
+    <update id="updateScannedUntil">
+        UPDATE ai_store_config SET scanned_until = #{at} WHERE store_id = #{storeId}
+    </update>
+
+    <update id="updateRepoState">
+        UPDATE ai_store_config SET repo_commit = #{commit}, repo_synced_at = #{syncedAt}, repo_error = #{error}
+        WHERE store_id = #{storeId}
+    </update>
+
+    <!-- error groups -->
+
+    <select id="selectGroupByFingerprint" resultMap="group">
+        SELECT id, store_id, fingerprint, error_type, location, sample, host, occurrences, first_seen, last_seen,
+               status, diagnosis_id
+        FROM error_group WHERE store_id = #{storeId} AND fingerprint = #{fingerprint}
+    </select>
+
+    <select id="selectGroup" resultMap="group">
+        SELECT id, store_id, fingerprint, error_type, location, sample, host, occurrences, first_seen, last_seen,
+               status, diagnosis_id
+        FROM error_group WHERE id = #{id}
+    </select>
+
+    <select id="selectGroups" resultMap="group">
+        SELECT id, store_id, fingerprint, error_type, location, sample, host, occurrences, first_seen, last_seen,
+               status, diagnosis_id
+        FROM error_group
+        <where>
+            <if test="storeId != null">store_id = #{storeId}</if>
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+        ORDER BY last_seen DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertGroup" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO error_group (store_id, fingerprint, error_type, location, sample, host, occurrences, first_seen,
+                                 last_seen, status, diagnosis_id)
+        VALUES (#{group.storeId}, #{group.fingerprint}, #{group.errorType}, #{group.location}, #{group.sample},
+                #{group.host}, #{group.occurrences}, #{group.firstSeen}, #{group.lastSeen}, #{group.status},
+                #{group.diagnosisId})
+    </insert>
+
+    <update id="touchGroup">
+        UPDATE error_group
+        SET occurrences = occurrences + #{count}, sample = #{sample}, host = #{host},
+            last_seen = CASE WHEN last_seen IS NULL OR last_seen &lt; #{lastSeen} THEN #{lastSeen} ELSE last_seen END
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateGroupStatus">
+        UPDATE error_group SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <update id="updateGroupDiagnosis">
+        UPDATE error_group SET diagnosis_id = #{diagnosisId} WHERE id = #{id}
+    </update>
+
+    <!-- diagnoses -->
+
+    <insert id="insertDiagnosis" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO ai_diagnosis (store_id, group_id, trigger_type, alert_event_id, status, review_state, error_type,
+                                  log_text, host, source, log_time, repo_commit, code_refs, provider, model, summary,
+                                  root_cause, suggestion, diff, confidence, prompt_tokens, completion_tokens, error,
+                                  created_by, created_at, finished_at)
+        VALUES (#{value.storeId}, #{value.groupId}, #{value.triggerType}, #{value.alertEventId}, #{value.status},
+                #{value.reviewState}, #{value.errorType}, #{value.logText}, #{value.host}, #{value.source},
+                #{value.logTime}, #{value.repoCommit}, #{value.codeRefs}, #{value.provider}, #{value.model},
+                #{value.summary}, #{value.rootCause}, #{value.suggestion}, #{value.diff}, #{value.confidence},
+                #{value.promptTokens}, #{value.completionTokens}, #{value.error}, #{value.createdBy},
+                #{value.createdAt}, #{value.finishedAt})
+    </insert>
+
+    <update id="updateDiagnosis">
+        UPDATE ai_diagnosis
+        SET status = #{value.status}, error_type = #{value.errorType}, repo_commit = #{value.repoCommit},
+            code_refs = #{value.codeRefs}, provider = #{value.provider}, model = #{value.model},
+            summary = #{value.summary}, root_cause = #{value.rootCause}, suggestion = #{value.suggestion},
+            diff = #{value.diff}, confidence = #{value.confidence}, prompt_tokens = #{value.promptTokens},
+            completion_tokens = #{value.completionTokens}, error = #{value.error},
+            finished_at = #{value.finishedAt}
+        WHERE id = #{value.id}
+    </update>
+
+    <select id="selectDiagnosis" resultMap="diagnosis">
+        SELECT <include refid="diagnosisColumns"/> FROM ai_diagnosis WHERE id = #{id}
+    </select>
+
+    <select id="selectDiagnoses" resultMap="diagnosis">
+        SELECT <include refid="diagnosisColumns"/>
+        FROM ai_diagnosis
+        WHERE created_at &gt;= #{since}
+        <if test="storeId != null">AND store_id = #{storeId}</if>
+        <if test="reviewState != null">AND review_state = #{reviewState}</if>
+        <if test="triggerType != null">AND trigger_type = #{triggerType}</if>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countAutomaticSince" resultType="_int">
+        SELECT COUNT(*) FROM ai_diagnosis WHERE created_at &gt;= #{since} AND trigger_type &lt;&gt; 'manual'
+    </select>
+
+    <update id="updateReviewState">
+        UPDATE ai_diagnosis SET review_state = #{reviewState} WHERE id = #{id}
+    </update>
+
+    <update id="failUnfinished">
+        UPDATE ai_diagnosis SET status = 'failed', error = #{error}, finished_at = #{at}
+        WHERE status IN ('pending', 'running')
+    </update>
+
+    <!-- knowledge -->
+
+    <resultMap id="knowledge" type="com.loggingx.dao.ai.AiKnowledge">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="tags" javaType="java.lang.String"/>
+            <arg column="store_id" javaType="java.lang.Long"/>
+            <arg column="created_by" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectKnowledge" resultMap="knowledge">
+        SELECT id, title, content, tags, store_id, created_by, created_at, updated_at
+        FROM ai_knowledge ORDER BY updated_at DESC, id DESC
+    </select>
+
+    <select id="selectKnowledgeById" resultMap="knowledge">
+        SELECT id, title, content, tags, store_id, created_by, created_at, updated_at
+        FROM ai_knowledge WHERE id = #{id}
+    </select>
+
+    <insert id="insertKnowledge" useGeneratedKeys="true" keyProperty="key.id" keyColumn="id">
+        INSERT INTO ai_knowledge (title, content, tags, store_id, created_by, created_at, updated_at)
+        VALUES (#{value.title}, #{value.content}, #{value.tags}, #{value.storeId}, #{value.createdBy},
+                #{value.createdAt}, #{value.updatedAt})
+    </insert>
+
+    <update id="updateKnowledge">
+        UPDATE ai_knowledge
+        SET title = #{value.title}, content = #{value.content}, tags = #{value.tags}, store_id = #{value.storeId},
+            updated_at = #{value.updatedAt}
+        WHERE id = #{value.id}
+    </update>
+
+    <delete id="deleteKnowledge">
+        DELETE FROM ai_knowledge WHERE id = #{id}
+    </delete>
+
+    <!-- notices -->
+
+    <select id="selectNoticeSeen" resultType="java.time.Instant">
+        SELECT seen_at FROM user_notice_seen WHERE username = #{username}
+    </select>
+
+    <update id="updateNoticeSeen">
+        UPDATE user_notice_seen SET seen_at = #{at} WHERE username = #{username}
+    </update>
+
+    <insert id="insertNoticeSeen">
+        INSERT INTO user_notice_seen (username, seen_at) VALUES (#{username}, #{at})
+    </insert>
+</mapper>

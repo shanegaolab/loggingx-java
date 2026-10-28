@@ -1,5 +1,6 @@
 package com.loggingx.web.config;
 
+import com.loggingx.biz.permission.StoreAccessService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,9 +16,11 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
      * Prefix applied to every REST controller in the web module, e.g. {@code /api/user/list}.
      */
     private final String apiPrefix;
+    private final StoreAccessService storeAccessService;
 
-    public WebMvcConfiguration(@Value("${api.prefix:/api}") String apiPrefix) {
+    public WebMvcConfiguration(@Value("${api.prefix:/api}") String apiPrefix, StoreAccessService storeAccessService) {
         this.apiPrefix = apiPrefix;
+        this.storeAccessService = storeAccessService;
     }
 
     @Override
@@ -30,5 +33,7 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         // Log producers call the ingest endpoint continuously; auditing each call would flood the application log.
         registry.addInterceptor(new OperationAuditInterceptor()).excludePathPatterns(apiPrefix + "/logs/ingest");
+        registry.addInterceptor(new StoreAccessInterceptor(storeAccessService))
+                .excludePathPatterns(apiPrefix + "/logs/ingest");
     }
 }

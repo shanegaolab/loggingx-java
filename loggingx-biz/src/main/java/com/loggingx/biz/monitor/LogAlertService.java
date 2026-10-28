@@ -17,6 +17,7 @@ import com.loggingx.dao.monitor.LogAlertRule;
 import com.loggingx.dao.support.GeneratedKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -50,13 +51,16 @@ public class LogAlertService {
     private final LogRecordRepository recordRepository;
     private final LogStoreRepository storeRepository;
     private final NotifyService notifyService;
+    private final ApplicationEventPublisher events;
 
     public LogAlertService(LogAlertMapper mapper, LogRecordRepository recordRepository,
-                           LogStoreRepository storeRepository, NotifyService notifyService) {
+                           LogStoreRepository storeRepository, NotifyService notifyService,
+                           ApplicationEventPublisher events) {
         this.mapper = mapper;
         this.recordRepository = recordRepository;
         this.storeRepository = storeRepository;
         this.notifyService = notifyService;
+        this.events = events;
     }
 
     // ---------- rules ----------
@@ -206,7 +210,7 @@ public class LogAlertService {
                 continue;
             }
             if (count > rule.threshold()) {
-                raise(rule, count, sample(search), open, now);
+                raise(rule, count, sample(search), open, now, search);
             } else if (open != null) {
                 resolve(open, now);
             }
@@ -238,7 +242,8 @@ public class LogAlertService {
         }
     }
 
-    private void raise(LogAlertRule rule, long count, String sample, LogAlertEvent open, Instant now) {
+    private void raise(LogAlertRule rule, long count, String sample, LogAlertEvent open, Instant now,
+                       LogSearch search) {
         if (open != null) {
             LogAlertEvent updated = new LogAlertEvent(open.id(), open.ruleId(), rule.name(), open.storeId(),
                     rule.severity(), rule.threshold(), rule.windowMinutes(), count,
@@ -257,6 +262,11 @@ public class LogAlertService {
         log.warn("event=log-alert.fire rule=\"{}\" storeId={} count={} threshold={}", rule.name(), rule.storeId(),
                 count, rule.threshold());
         notify(event.withId(key.getId()), "firing", null);
+        try {
+            events.publishEvent(new LogAlertFired(rule.storeId(), key.getId(), rule.id(), rule.name(), search));
+        } catch (RuntimeException e) {
+            log.warn("Cannot hand log alert {} to its listeners: {}", key.getId(), e.getMessage());
+        }
     }
 
     private void resolve(LogAlertEvent event, Instant now) {

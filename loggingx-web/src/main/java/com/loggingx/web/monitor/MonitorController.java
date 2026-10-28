@@ -6,8 +6,10 @@ import com.loggingx.biz.monitor.HostStatus;
 import com.loggingx.biz.monitor.MonitorService;
 import com.loggingx.biz.monitor.SeriesPoint;
 import com.loggingx.biz.notify.NotifyService;
+import com.loggingx.biz.permission.StoreAccessService;
 import com.loggingx.biz.notify.NotifyService.RuleNotify;
 import com.loggingx.common.api.ApiResponse;
+import com.loggingx.common.exception.NotFoundException;
 import com.loggingx.common.util.DateTimes;
 import com.loggingx.dao.log.LogStore;
 import com.loggingx.dao.log.LogStoreRepository;
@@ -42,20 +44,24 @@ import java.util.Map;
 @RequestMapping("/monitor")
 public class MonitorController {
 
-    private static final String VIEWERS = "@permissionService.hasAnyMenu(authentication, 'HostMonitor', 'HostAlert')";
+    private static final String VIEWERS =
+            "@permissionService.hasAnyMenu(authentication, 'HostMonitor', 'AlertEvent', 'HostAlert')";
     private static final String ALERT_MANAGERS = "@permissionService.hasAnyMenu(authentication, 'HostAlert')";
 
     private final MonitorService monitorService;
     private final AlertService alertService;
     private final LogStoreRepository logStoreRepository;
     private final NotifyService notifyService;
+    private final StoreAccessService storeAccessService;
 
     public MonitorController(MonitorService monitorService, AlertService alertService,
-                             LogStoreRepository logStoreRepository, NotifyService notifyService) {
+                             LogStoreRepository logStoreRepository, NotifyService notifyService,
+                             StoreAccessService storeAccessService) {
         this.monitorService = monitorService;
         this.alertService = alertService;
         this.logStoreRepository = logStoreRepository;
         this.notifyService = notifyService;
+        this.storeAccessService = storeAccessService;
     }
 
     // ---------- responses ----------
@@ -129,9 +135,11 @@ public class MonitorController {
      */
     @GetMapping("/hosts")
     @PreAuthorize(VIEWERS)
-    public ApiResponse<List<HostResponse>> hosts(@RequestParam(required = false) Long storeId) {
+    public ApiResponse<List<HostResponse>> hosts(@RequestParam(required = false) Long storeId,
+                                                 Authentication authentication) {
         Map<Long, LogStore> stores = stores();
-        return ApiResponse.success(monitorService.hosts(storeId).stream()
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(), monitorService.hosts(storeId),
+                        HostStatus::storeId).stream()
                 .map(host -> HostResponse.from(host, stores.get(host.storeId())))
                 .toList());
     }
@@ -192,9 +200,11 @@ public class MonitorController {
                                                         @RequestParam(required = false) Long storeId,
                                                         @RequestParam(required = false) String host,
                                                         @RequestParam(defaultValue = "7") int days,
-                                                        @RequestParam(defaultValue = "200") int limit) {
+                                                        @RequestParam(defaultValue = "200") int limit,
+                                                        Authentication authentication) {
         Map<Long, LogStore> stores = stores();
-        return ApiResponse.success(alertService.events(status, storeId, host, days, limit).stream()
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(),
+                        alertService.events(status, storeId, host, days, limit), AlertEvent::storeId).stream()
                 .map((AlertEvent event) -> {
                     LogStore store = stores.get(event.storeId());
                     return new AlertEventResponse(event.id(), event.ruleId(), event.ruleName(), event.metric(),
@@ -209,10 +219,11 @@ public class MonitorController {
 
     @GetMapping("/alert-rules")
     @PreAuthorize(VIEWERS)
-    public ApiResponse<List<AlertRuleResponse>> rules() {
+    public ApiResponse<List<AlertRuleResponse>> rules(Authentication authentication) {
         Map<Long, LogStore> stores = stores();
         Map<Long, RuleNotify> notifies = notifyService.ruleNotifies(NotifyService.RULE_HOST);
-        return ApiResponse.success(alertService.rules().stream()
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(), alertService.rules(),
+                        AlertRule::storeId).stream()
                 .map(rule -> ruleResponse(rule, stores, notifies.getOrDefault(rule.id(), RuleNotify.none())))
                 .toList());
     }
@@ -222,7 +233,7 @@ public class MonitorController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<AlertRuleResponse> createRule(@RequestBody AlertRuleRequest request,
                                                      Authentication authentication) {
-        requireStoreIfGiven(request.storeId());
+        requireRuleScope(authentication, request.storeId());
         AlertRule rule = alertService.createRule(request.toRule(), request.notification(), authentication.getName());
         return ApiResponse.success(ruleResponse(rule, stores(),
                 notifyService.ruleNotify(NotifyService.RULE_HOST, rule.id())));
@@ -232,7 +243,8 @@ public class MonitorController {
     @PreAuthorize(ALERT_MANAGERS)
     public ApiResponse<AlertRuleResponse> updateRule(@PathVariable Long id, @RequestBody AlertRuleRequest request,
                                                      Authentication authentication) {
-        requireStoreIfGiven(request.storeId());
+        requireRuleScope(authentication, existingRuleStore(id));
+        requireRuleScope(authentication, request.storeId());
         AlertRule rule = alertService.updateRule(id, request.toRule(), request.notification(), authentication.getName());
         return ApiResponse.success(ruleResponse(rule, stores(), notifyService.ruleNotify(NotifyService.RULE_HOST, id)));
     }
@@ -240,14 +252,26 @@ public class MonitorController {
     @DeleteMapping("/alert-rules/{id}")
     @PreAuthorize(ALERT_MANAGERS)
     public ApiResponse<Void> deleteRule(@PathVariable Long id, Authentication authentication) {
+        requireRuleScope(authentication, existingRuleStore(id));
         alertService.deleteRule(id, authentication.getName());
         return ApiResponse.success(null);
     }
 
-    private void requireStoreIfGiven(Long storeId) {
-        if (storeId != null) {
-            monitorService.requireStore(storeId);
+    /**
+     * A rule for one store needs access to it; a rule for every store needs access to every store.
+     */
+    private void requireRuleScope(Authentication authentication, Long storeId) {
+        if (storeId == null) {
+            storeAccessService.requireAllStores(authentication.getName());
+            return;
         }
+        monitorService.requireStore(storeId);
+        storeAccessService.require(authentication.getName(), storeId);
+    }
+
+    private Long existingRuleStore(Long id) {
+        return alertService.rules().stream().filter(rule -> rule.id().equals(id)).map(AlertRule::storeId)
+                .findFirst().orElseThrow(() -> new NotFoundException("Alert rule was not found"));
     }
 
     private static AlertRuleResponse ruleResponse(AlertRule rule, Map<Long, LogStore> stores,

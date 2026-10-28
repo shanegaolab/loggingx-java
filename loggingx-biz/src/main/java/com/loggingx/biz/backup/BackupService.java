@@ -659,6 +659,13 @@ public class BackupService implements RetentionHold, DisposableBean {
 
     // ---------- helpers ----------
 
+    /**
+     * @throws NotFoundException when there is no such archive
+     */
+    public Long archiveStoreId(Long archiveId) {
+        return requireArchive(archiveId).storeId();
+    }
+
     private BackupArchive requireArchive(Long id) {
         BackupArchive archive = backupMapper.selectArchive(id);
         if (archive == null) {

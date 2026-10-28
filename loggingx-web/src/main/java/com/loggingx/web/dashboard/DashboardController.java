@@ -9,6 +9,8 @@ import com.loggingx.biz.monitor.LogAlertService;
 import com.loggingx.biz.monitor.HostStatus;
 import com.loggingx.biz.monitor.MonitorService;
 import com.loggingx.biz.permission.PermissionService;
+import com.loggingx.biz.permission.StoreAccessService;
+import com.loggingx.biz.permission.StoreAccessService.Scope;
 import com.loggingx.common.api.ApiResponse;
 import com.loggingx.common.exception.BadRequestException;
 import com.loggingx.common.util.DateTimes;
@@ -64,11 +66,12 @@ public class DashboardController {
     private final LogAlertService logAlertService;
     private final BackupService backupService;
     private final PermissionService permissionService;
+    private final StoreAccessService storeAccessService;
 
     public DashboardController(LogStoreRepository logStoreRepository, LogRecordRepository logRecordRepository,
                                AgentService agentService, MonitorService monitorService, AlertService alertService,
                                LogAlertService logAlertService, BackupService backupService,
-                               PermissionService permissionService) {
+                               PermissionService permissionService, StoreAccessService storeAccessService) {
         this.logStoreRepository = logStoreRepository;
         this.logRecordRepository = logRecordRepository;
         this.agentService = agentService;
@@ -77,6 +80,7 @@ public class DashboardController {
         this.logAlertService = logAlertService;
         this.backupService = backupService;
         this.permissionService = permissionService;
+        this.storeAccessService = storeAccessService;
     }
 
     /**
@@ -152,30 +156,38 @@ public class DashboardController {
         }
         Instant to = Instant.now();
         Instant from = to.minus(Duration.ofHours(hours));
-        List<LogStore> stores = logStoreRepository.findAll();
+        // Every section counts only the stores the user may access.
+        Scope scope = storeAccessService.scopeOf(authentication.getName());
+        List<LogStore> stores = logStoreRepository.findAll().stream().filter(store -> scope.includes(store.id()))
+                .toList();
         Map<Long, LogStore> byId = new HashMap<>();
         stores.forEach(store -> byId.put(store.id(), store));
 
         Logs logs = can(authentication, "LogQuery", "LogTail", "LogStore")
-                ? logs(stores, byId, from, to, bucket) : null;
+                ? logs(stores, byId, from, to, bucket, scope) : null;
         Agents agents = null;
         if (can(authentication, "LogStore", "LogAgent")) {
             long total = 0;
             long online = 0;
-            for (AgentCount count : agentService.counts().values()) {
+            for (Map.Entry<Long, AgentCount> entry : agentService.counts().entrySet()) {
+                if (!scope.includes(entry.getKey())) {
+                    continue;
+                }
+                AgentCount count = entry.getValue();
                 total += count.total();
                 online += count.online();
             }
             agents = new Agents(total, online);
         }
-        Hosts hosts = can(authentication, "HostMonitor", "HostAlert") ? hosts() : null;
-        Alerts alerts = can(authentication, "HostMonitor", "HostAlert") ? alerts() : null;
-        Backup backup = can(authentication, "LogBackup") ? backup() : null;
+        Hosts hosts = can(authentication, "HostMonitor", "AlertEvent", "HostAlert") ? hosts(scope) : null;
+        Alerts alerts = can(authentication, "HostMonitor", "AlertEvent", "HostAlert") ? alerts(scope) : null;
+        Backup backup = can(authentication, "LogBackup", "BackupArchive") ? backup(scope) : null;
         return ApiResponse.success(new Overview(from.toEpochMilli(), to.toEpochMilli(), hours, bucket.toMillis(),
                 logs, agents, hosts, alerts, backup));
     }
 
-    private Logs logs(List<LogStore> stores, Map<Long, LogStore> byId, Instant from, Instant to, Duration bucket) {
+    private Logs logs(List<LogStore> stores, Map<Long, LogStore> byId, Instant from, Instant to, Duration bucket,
+                      Scope scope) {
         int enabled = (int) stores.stream().filter(LogStore::enabled).count();
         List<LevelBucket> buckets;
         try {
@@ -198,6 +210,9 @@ public class DashboardController {
         long errors = 0;
         long previousErrors = 0;
         for (LevelBucket item : buckets) {
+            if (!scope.includes(item.storeId())) {
+                continue;
+            }
             boolean error = ERROR_LEVELS.contains(item.level());
             if (item.time().toEpochMilli() < firstBucket * size) {
                 // The bucket that straddles the range start counts as previous; the trend is still fair.
@@ -246,8 +261,9 @@ public class DashboardController {
                 .toList();
     }
 
-    private Hosts hosts() {
-        List<HostStatus> hosts = monitorService.hosts(null);
+    private Hosts hosts(Scope scope) {
+        List<HostStatus> hosts = monitorService.hosts(null).stream().filter(host -> scope.includes(host.storeId()))
+                .toList();
         List<HostUsage> top = hosts.stream()
                 .filter(host -> host.sampleTime() != null)
                 .sorted(Comparator.comparing((HostStatus host) -> host.cpuPercent() == null ? -1 : host.cpuPercent())
@@ -264,9 +280,12 @@ public class DashboardController {
     private record Firing(AlertItem item, Instant startedAt) {
     }
 
-    private Alerts alerts() {
+    private Alerts alerts(Scope scope) {
         List<Firing> firing = new ArrayList<>();
         for (AlertEvent event : alertService.events(AlertEvent.FIRING, null, null, 30, 500)) {
+            if (!scope.includes(event.storeId())) {
+                continue;
+            }
             firing.add(new Firing(new AlertItem("host", event.id(), event.ruleName(), event.metric(),
                     event.severity(), event.storeId(), event.hostname(), event.value(),
                     DateTimes.format(event.startedAt())), event.startedAt()));
@@ -274,6 +293,9 @@ public class DashboardController {
         Map<Long, String> storeNames = new HashMap<>();
         logStoreRepository.findAll().forEach(store -> storeNames.put(store.id(), store.name()));
         for (LogAlertEvent event : logAlertService.events(LogAlertService.FIRING, null, 30, 500)) {
+            if (!scope.includes(event.storeId())) {
+                continue;
+            }
             firing.add(new Firing(new AlertItem("log", event.id(), event.ruleName(), "log", event.severity(),
                     event.storeId(), storeNames.get(event.storeId()),
                     event.value() == null ? null : event.value().doubleValue(), DateTimes.format(event.startedAt())),
@@ -289,8 +311,9 @@ public class DashboardController {
                 .filter(f -> "critical".equals(f.item().severity())).count(), items);
     }
 
-    private Backup backup() {
-        List<PolicyView> policies = backupService.policies();
+    private Backup backup(Scope scope) {
+        List<PolicyView> policies = backupService.policies().stream()
+                .filter(policy -> scope.includes(policy.store().id())).toList();
         int enabled = 0;
         int pending = 0;
         long archives = 0;

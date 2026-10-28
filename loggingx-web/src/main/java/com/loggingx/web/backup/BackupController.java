@@ -6,6 +6,7 @@ import com.loggingx.biz.backup.BackupService.PolicyView;
 import com.loggingx.biz.backup.BackupService.RunStatus;
 import com.loggingx.biz.backup.BackupService.StorageCommand;
 import com.loggingx.biz.backup.BackupService.StorageView;
+import com.loggingx.biz.permission.StoreAccessService;
 import com.loggingx.common.api.ApiResponse;
 import com.loggingx.common.util.DateTimes;
 import com.loggingx.dao.backup.BackupArchive;
@@ -39,12 +40,20 @@ import java.util.List;
 @RequestMapping("/backup")
 public class BackupController {
 
-    private static final String MANAGERS = "@permissionService.hasAnyMenu(authentication, 'LogBackup')";
+    /** The archive policies page: storage, schedule and per-store policies. */
+    private static final String POLICIES = "@permissionService.hasAnyMenu(authentication, 'LogBackup')";
+    /** The archives page: download and restore. */
+    private static final String ARCHIVES = "@permissionService.hasAnyMenu(authentication, 'BackupArchive')";
+    /** Both pages show the stores' archive totals and the running task. */
+    private static final String BACKUP_PAGES =
+            "@permissionService.hasAnyMenu(authentication, 'LogBackup', 'BackupArchive')";
 
     private final BackupService backupService;
+    private final StoreAccessService storeAccessService;
 
-    public BackupController(BackupService backupService) {
+    public BackupController(BackupService backupService, StoreAccessService storeAccessService) {
         this.backupService = backupService;
+        this.storeAccessService = storeAccessService;
     }
 
     public record StorageRequest(String endpoint, String region, String bucket, String prefix, String accessKey,
@@ -130,7 +139,7 @@ public class BackupController {
      * @return the settings, or {@code null} data when not configured; the secret key is never returned
      */
     @GetMapping("/storage")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(POLICIES)
     public ApiResponse<StorageResponse> storage() {
         return ApiResponse.success(StorageResponse.from(backupService.storage()));
     }
@@ -139,7 +148,7 @@ public class BackupController {
      * @param request {@code secretKey} empty keeps the saved one
      */
     @PutMapping("/storage")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(POLICIES)
     public ApiResponse<StorageResponse> saveStorage(@RequestBody StorageRequest request,
                                                     Authentication authentication) {
         return ApiResponse.success(StorageResponse.from(
@@ -150,7 +159,7 @@ public class BackupController {
      * Checks the settings without saving them: reaches the bucket, writes and deletes a small object.
      */
     @PostMapping("/storage/test")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(POLICIES)
     public ApiResponse<Void> testStorage(@RequestBody StorageRequest request) {
         backupService.testStorage(request.toCommand());
         return ApiResponse.success(null);
@@ -159,13 +168,14 @@ public class BackupController {
     // ---------- policies ----------
 
     @GetMapping("/policies")
-    @PreAuthorize(MANAGERS)
-    public ApiResponse<List<PolicyResponse>> policies() {
-        return ApiResponse.success(backupService.policies().stream().map(PolicyResponse::from).toList());
+    @PreAuthorize(BACKUP_PAGES)
+    public ApiResponse<List<PolicyResponse>> policies(Authentication authentication) {
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(), backupService.policies(),
+                (PolicyView policy) -> policy.store().id()).stream().map(PolicyResponse::from).toList());
     }
 
     @PutMapping("/policies/{storeId}")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(POLICIES)
     public ApiResponse<Void> savePolicy(@PathVariable Long storeId, @RequestBody PolicyRequest request,
                                         Authentication authentication) {
         backupService.savePolicy(storeId, request.enabled() == null || request.enabled(),
@@ -177,7 +187,7 @@ public class BackupController {
     // ---------- runs and archives ----------
 
     @GetMapping("/status")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(BACKUP_PAGES)
     public ApiResponse<StatusResponse> status() {
         return ApiResponse.success(StatusResponse.from(backupService.status()));
     }
@@ -186,24 +196,27 @@ public class BackupController {
      * Starts an archive run now (it also runs daily).
      */
     @PostMapping("/run")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(POLICIES)
     public ApiResponse<StatusResponse> run(Authentication authentication) {
         backupService.runNow(authentication.getName());
         return ApiResponse.success(StatusResponse.from(backupService.status()));
     }
 
     @GetMapping("/archives")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(ARCHIVES)
     public ApiResponse<List<ArchiveResponse>> archives(@RequestParam(required = false) Long storeId,
                                                        @RequestParam(required = false) String status,
-                                                       @RequestParam(defaultValue = "500") int limit) {
-        return ApiResponse.success(backupService.archives(storeId, status, limit).stream()
+                                                       @RequestParam(defaultValue = "500") int limit,
+                                                       Authentication authentication) {
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(),
+                        backupService.archives(storeId, status, limit), BackupArchive::storeId).stream()
                 .map(ArchiveResponse::from).toList());
     }
 
     @PostMapping("/archives/{id}/restore")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(ARCHIVES)
     public ApiResponse<ArchiveResponse> restore(@PathVariable Long id, Authentication authentication) {
+        storeAccessService.require(authentication.getName(), backupService.archiveStoreId(id));
         return ApiResponse.success(ArchiveResponse.from(backupService.restore(id, authentication.getName())));
     }
 
@@ -211,8 +224,9 @@ public class BackupController {
      * @return a link the browser downloads the archive from, valid for 10 minutes
      */
     @PostMapping("/archives/{id}/download-link")
-    @PreAuthorize(MANAGERS)
-    public ApiResponse<DownloadLink> downloadLink(@PathVariable Long id) {
+    @PreAuthorize(ARCHIVES)
+    public ApiResponse<DownloadLink> downloadLink(@PathVariable Long id, Authentication authentication) {
+        storeAccessService.require(authentication.getName(), backupService.archiveStoreId(id));
         return ApiResponse.success(new DownloadLink("/api/backup/download/" + backupService.downloadToken(id)));
     }
 

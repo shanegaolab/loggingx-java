@@ -16,6 +16,11 @@
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>loggingx-java</name>
+    <url>https://loggingx.com</url>
+
+    <scm>
+        <url>https://github.com/shanegaolab/loggingx</url>
+    </scm>
     <description>LoggingX intelligent log analysis platform</description>
 
     <modules>

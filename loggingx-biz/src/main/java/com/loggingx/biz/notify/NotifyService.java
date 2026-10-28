@@ -57,6 +57,10 @@ public class NotifyService implements DisposableBean {
     /** Rule and event types: host monitoring alerts and log alerts. */
     public static final String RULE_HOST = "host";
     public static final String RULE_LOG = "log";
+    /** AI diagnosis notifications: their settings are kept as rule {@code ai} / 0. */
+    public static final String RULE_AI = "ai";
+    /** The notice kind of an AI diagnosis. */
+    public static final String DIAGNOSIS = "diagnosis";
 
     private static final Logger log = LoggerFactory.getLogger(NotifyService.class);
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -571,23 +575,23 @@ public class NotifyService implements DisposableBean {
         EmailConfig config = read(channel.config(), EmailConfig.class);
         String status = statusText(notice.kind());
         String color = "resolved".equals(notice.kind()) ? "#16a34a"
+                : DIAGNOSIS.equals(notice.kind()) ? "#7c3aed"
                 : "critical".equals(notice.severity()) ? "#dc2626" : "#d97706";
         Map<String, String> rows = new LinkedHashMap<>();
-        rows.put("告警规则", notice.ruleName());
-        rows.put("级别", severityText(notice.severity()));
-        rows.put("对象", notice.target());
-        rows.put("详情", notice.detail());
-        rows.put("开始时间", TIME.format(notice.startedAt()));
-        if (notice.resolvedAt() != null) {
-            rows.put("恢复时间", TIME.format(notice.resolvedAt()));
-            rows.put("持续", duration(Duration.between(notice.startedAt(), notice.resolvedAt())));
+        if (DIAGNOSIS.equals(notice.kind())) {
+            rows.put("错误", notice.ruleName());
+            rows.put("日志库", notice.target());
+            rows.put("结论", notice.detail());
+            rows.put("出错时间", TIME.format(notice.startedAt()));
+            if (notice.extra() != null && !notice.extra().isBlank()) {
+                rows.put("修改建议", notice.extra());
+            }
         } else {
-            rows.put("已持续", duration(Duration.between(notice.startedAt(), Instant.now())));
+            alertRows(notice, rows);
         }
-        if (notice.extra() != null && !notice.extra().isBlank()) {
-            rows.put("示例日志", notice.extra());
-        }
-        String subject = "[LoggingX][" + severityText(notice.severity()) + "][" + status + "] " + notice.ruleName()
+        String subject = DIAGNOSIS.equals(notice.kind())
+                ? "[LoggingX][AI 诊断] " + notice.ruleName() + " - " + notice.target()
+                : "[LoggingX][" + severityText(notice.severity()) + "][" + status + "] " + notice.ruleName()
                 + " - " + notice.target();
         String body = html(status, color, notice.ruleName(), new ArrayList<>(rows.entrySet()));
         String password;
@@ -605,6 +609,23 @@ public class NotifyService implements DisposableBean {
             } catch (SmtpClient.SmtpException e) {
                 record(notice, EMAIL, email, e.getMessage());
             }
+        }
+    }
+
+    private static void alertRows(AlertNotice notice, Map<String, String> rows) {
+        rows.put("告警规则", notice.ruleName());
+        rows.put("级别", severityText(notice.severity()));
+        rows.put("对象", notice.target());
+        rows.put("详情", notice.detail());
+        rows.put("开始时间", TIME.format(notice.startedAt()));
+        if (notice.resolvedAt() != null) {
+            rows.put("恢复时间", TIME.format(notice.resolvedAt()));
+            rows.put("持续", duration(Duration.between(notice.startedAt(), notice.resolvedAt())));
+        } else {
+            rows.put("已持续", duration(Duration.between(notice.startedAt(), Instant.now())));
+        }
+        if (notice.extra() != null && !notice.extra().isBlank()) {
+            rows.put("示例日志", notice.extra());
         }
     }
 
@@ -666,7 +687,7 @@ public class NotifyService implements DisposableBean {
     static String html(String badge, String color, String title, List<Map.Entry<String, String>> rows) {
         StringBuilder table = new StringBuilder();
         for (Map.Entry<String, String> row : rows) {
-            boolean code = "示例日志".equals(row.getKey());
+            boolean code = "示例日志".equals(row.getKey()) || "修改建议".equals(row.getKey());
             table.append("<tr><td style=\"padding:8px 12px;color:#64748b;white-space:nowrap;vertical-align:top;"
                             + "border-top:1px solid #eef2f7\">").append(escape(row.getKey()))
                     .append("</td><td style=\"padding:8px 12px;color:#0f172a;border-top:1px solid #eef2f7;")
@@ -693,12 +714,17 @@ public class NotifyService implements DisposableBean {
             case "resolved" -> "已恢复";
             case "repeat" -> "持续告警";
             case "test" -> "测试";
+            case DIAGNOSIS -> "AI 建议";
             default -> "告警";
         };
     }
 
     static String severityText(String severity) {
-        return "critical".equals(severity) ? "严重" : "警告";
+        return switch (severity == null ? "" : severity) {
+            case "critical" -> "严重";
+            case "info" -> "提示";
+            default -> "警告";
+        };
     }
 
     static String duration(Duration duration) {

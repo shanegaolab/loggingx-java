@@ -6,6 +6,7 @@ import com.loggingx.biz.agent.AgentService.Synced;
 import com.loggingx.biz.log.LogStoreService;
 import com.loggingx.biz.monitor.MonitorService;
 import com.loggingx.biz.permission.PermissionService;
+import com.loggingx.biz.permission.StoreAccessService;
 import com.loggingx.common.api.ApiResponse;
 import com.loggingx.common.exception.BadRequestException;
 import com.loggingx.common.exception.ForbiddenException;
@@ -86,6 +87,7 @@ public class AgentController {
     private final AgentService agentService;
     private final MonitorService monitorService;
     private final PermissionService permissionService;
+    private final StoreAccessService storeAccessService;
     private final boolean kafkaEnabled;
     private final String kafkaServers;
     private final String kafkaTopic;
@@ -97,6 +99,7 @@ public class AgentController {
             AgentService agentService,
             MonitorService monitorService,
             PermissionService permissionService,
+            StoreAccessService storeAccessService,
             @Value("${loggingx.log.kafka.enabled:false}") boolean kafkaEnabled,
             @Value("${spring.kafka.bootstrap-servers:}") String kafkaServers,
             @Value("${loggingx.log.kafka.topics:loggingx-logs}") String kafkaTopics
@@ -107,6 +110,7 @@ public class AgentController {
         this.agentService = agentService;
         this.monitorService = monitorService;
         this.permissionService = permissionService;
+        this.storeAccessService = storeAccessService;
         this.kafkaEnabled = kafkaEnabled;
         this.kafkaServers = kafkaServers;
         this.kafkaTopic = kafkaTopics.split(",")[0].trim();
@@ -179,11 +183,13 @@ public class AgentController {
      */
     @GetMapping("/agents")
     @PreAuthorize(MANAGERS)
-    public ApiResponse<List<AgentResponse>> agents(@RequestParam(required = false) Long storeId) {
+    public ApiResponse<List<AgentResponse>> agents(@RequestParam(required = false) Long storeId,
+                                                   Authentication authentication) {
         Map<Long, LogStore> stores = new HashMap<>();
         Map<Long, CollectConfig> configs = new HashMap<>();
         Map<Long, MonitorConfig> monitors = new HashMap<>();
-        List<AgentResponse> agents = agentService.list(storeId).stream().map(item -> {
+        List<AgentResponse> agents = storeAccessService.filter(authentication.getName(), agentService.list(storeId),
+                LogAgent::storeId).stream().map(item -> {
             LogStore store = stores.computeIfAbsent(item.storeId(),
                     id -> logStoreRepository.findById(id).orElse(null));
             if (store == null) {
@@ -201,6 +207,7 @@ public class AgentController {
     @DeleteMapping("/agents/{id}")
     @PreAuthorize(MANAGERS)
     public ApiResponse<Void> removeAgent(@PathVariable Long id, Authentication authentication) {
+        agentService.find(id).ifPresent(item -> storeAccessService.require(authentication.getName(), item.storeId()));
         agentService.remove(id, authentication.getName());
         return ApiResponse.success(null);
     }

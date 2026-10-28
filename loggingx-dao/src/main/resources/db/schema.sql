@@ -397,3 +397,115 @@ CREATE TABLE IF NOT EXISTS notify_record (
     KEY idx_notify_record_event (event_type, event_id, sent_at),
     KEY idx_notify_record_time (sent_at)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- Which log stores a role may access. A role without a row may access every store (as before stores were scoped).
+CREATE TABLE IF NOT EXISTS sys_role_log_store (
+    role_id    BIGINT  NOT NULL,
+    all_stores BOOLEAN NOT NULL DEFAULT TRUE,
+    store_ids  TEXT,
+    updated_at DATETIME(6),
+    PRIMARY KEY (role_id),
+    CONSTRAINT fk_role_log_store_role FOREIGN KEY (role_id) REFERENCES sys_role (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- AI diagnosis: global settings (one row, id 1).
+CREATE TABLE IF NOT EXISTS ai_settings (
+    id          INT          NOT NULL,
+    provider    VARCHAR(32),
+    model       VARCHAR(128),
+    daily_limit INT          NOT NULL DEFAULT 50,
+    updated_at  DATETIME(6),
+    PRIMARY KEY (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- AI diagnosis per log store: its code repository and what triggers an analysis.
+CREATE TABLE IF NOT EXISTS ai_store_config (
+    store_id       BIGINT        NOT NULL,
+    repo_url       VARCHAR(512),
+    repo_branch    VARCHAR(128),
+    repo_username  VARCHAR(128),
+    repo_secret    VARCHAR(2048),
+    auto_new       BOOLEAN       NOT NULL DEFAULT FALSE,
+    on_alert       BOOLEAN       NOT NULL DEFAULT FALSE,
+    scanned_until  DATETIME(6),
+    repo_commit    VARCHAR(64),
+    repo_synced_at DATETIME(6),
+    repo_error     VARCHAR(1000),
+    updated_at     DATETIME(6),
+    PRIMARY KEY (store_id),
+    CONSTRAINT fk_ai_store_config_store FOREIGN KEY (store_id) REFERENCES log_store (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- Errors of a store grouped by fingerprint (exception type and first application frame, or normalized message).
+CREATE TABLE IF NOT EXISTS error_group (
+    id           BIGINT       NOT NULL AUTO_INCREMENT,
+    store_id     BIGINT       NOT NULL,
+    fingerprint  VARCHAR(40)  NOT NULL,
+    error_type   VARCHAR(255),
+    location     VARCHAR(512),
+    sample       TEXT,
+    host         VARCHAR(128),
+    occurrences  BIGINT       NOT NULL DEFAULT 0,
+    first_seen   DATETIME(6),
+    last_seen    DATETIME(6),
+    status       VARCHAR(16)  NOT NULL DEFAULT 'open',
+    diagnosis_id BIGINT,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_error_group UNIQUE (store_id, fingerprint),
+    CONSTRAINT fk_error_group_store FOREIGN KEY (store_id) REFERENCES log_store (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- An AI analysis of an error with the code it points to.
+CREATE TABLE IF NOT EXISTS ai_diagnosis (
+    id                BIGINT        NOT NULL AUTO_INCREMENT,
+    store_id          BIGINT        NOT NULL,
+    group_id          BIGINT,
+    trigger_type      VARCHAR(16)   NOT NULL,
+    alert_event_id    BIGINT,
+    status            VARCHAR(16)   NOT NULL,
+    review_state      VARCHAR(16)   NOT NULL DEFAULT 'open',
+    error_type        VARCHAR(255),
+    log_text          TEXT,
+    host              VARCHAR(128),
+    source            VARCHAR(255),
+    log_time          DATETIME(6),
+    repo_commit       VARCHAR(64),
+    code_refs         MEDIUMTEXT,
+    provider          VARCHAR(32),
+    model             VARCHAR(128),
+    summary           VARCHAR(500),
+    root_cause        TEXT,
+    suggestion        MEDIUMTEXT,
+    diff              MEDIUMTEXT,
+    confidence        VARCHAR(16),
+    prompt_tokens     INT,
+    completion_tokens INT,
+    error             VARCHAR(1000),
+    created_by        VARCHAR(64),
+    created_at        DATETIME(6),
+    finished_at       DATETIME(6),
+    PRIMARY KEY (id),
+    KEY idx_ai_diagnosis_created (created_at),
+    CONSTRAINT fk_ai_diagnosis_store FOREIGN KEY (store_id) REFERENCES log_store (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- When each user last read their notices (the header bell).
+CREATE TABLE IF NOT EXISTS user_notice_seen (
+    username VARCHAR(64) NOT NULL,
+    seen_at  DATETIME(6),
+    PRIMARY KEY (username)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- Operations knowledge (runbooks, postmortems, FAQs) the AI assistant answers from.
+CREATE TABLE IF NOT EXISTS ai_knowledge (
+    id         BIGINT       NOT NULL AUTO_INCREMENT,
+    title      VARCHAR(200) NOT NULL,
+    content    MEDIUMTEXT   NOT NULL,
+    tags       VARCHAR(255),
+    store_id   BIGINT,
+    created_by VARCHAR(64),
+    created_at DATETIME(6),
+    updated_at DATETIME(6),
+    PRIMARY KEY (id),
+    CONSTRAINT fk_ai_knowledge_store FOREIGN KEY (store_id) REFERENCES log_store (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;

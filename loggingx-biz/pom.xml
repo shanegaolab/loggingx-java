@@ -19,6 +19,11 @@
             <groupId>com.loggingx</groupId>
             <artifactId>loggingx-dao</artifactId>
         </dependency>
+        <!-- AI diagnosis asks the configured chat model. -->
+        <dependency>
+            <groupId>com.loggingx</groupId>
+            <artifactId>loggingx-ai</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>

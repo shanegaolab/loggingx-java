@@ -7,6 +7,7 @@ import com.loggingx.biz.notify.NotifyService.EmailSettings;
 import com.loggingx.biz.notify.NotifyService.GroupView;
 import com.loggingx.biz.notify.NotifyService.RuleNotify;
 import com.loggingx.biz.notify.NotifyService.SmsSettings;
+import com.loggingx.biz.permission.StoreAccessService;
 import com.loggingx.common.api.ApiResponse;
 import com.loggingx.common.util.DateTimes;
 import com.loggingx.dao.account.UserAccount;
@@ -42,17 +43,30 @@ import java.util.Map;
 @RequestMapping("/alert-center")
 public class AlertCenterController {
 
-    private static final String MANAGERS = "@permissionService.hasAnyMenu(authentication, 'HostAlert')";
+    /** Any page of the alert center: the store filter and the log rules are shown on the events page too. */
+    private static final String ALERT_PAGES =
+            "@permissionService.hasAnyMenu(authentication, 'AlertEvent', 'HostAlert', 'AlertNotify')";
+    private static final String EVENTS = "@permissionService.hasAnyMenu(authentication, 'AlertEvent')";
+    private static final String RULES = "@permissionService.hasAnyMenu(authentication, 'HostAlert')";
+    private static final String NOTIFY = "@permissionService.hasAnyMenu(authentication, 'AlertNotify')";
+    /** The records are also opened from an event, on the events page. */
+    private static final String RECORD_READERS =
+            "@permissionService.hasAnyMenu(authentication, 'AlertEvent', 'AlertNotify')";
+    /** Users and groups are chosen as recipients of alert rules and of AI diagnosis notifications. */
+    private static final String RECIPIENT_PICKERS =
+            "@permissionService.hasAnyMenu(authentication, 'HostAlert', 'AlertNotify', 'AiSettings')";
 
     private final LogAlertService logAlertService;
     private final NotifyService notifyService;
     private final LogStoreRepository logStoreRepository;
+    private final StoreAccessService storeAccessService;
 
     public AlertCenterController(LogAlertService logAlertService, NotifyService notifyService,
-                                 LogStoreRepository logStoreRepository) {
+                                 LogStoreRepository logStoreRepository, StoreAccessService storeAccessService) {
         this.logAlertService = logAlertService;
         this.notifyService = notifyService;
         this.logStoreRepository = logStoreRepository;
+        this.storeAccessService = storeAccessService;
     }
 
     // ---------- stores and users to choose from ----------
@@ -69,16 +83,17 @@ public class AlertCenterController {
     }
 
     @GetMapping("/stores")
-    @PreAuthorize(MANAGERS)
-    public ApiResponse<List<StoreOption>> stores() {
-        return ApiResponse.success(logStoreRepository.findAll().stream()
+    @PreAuthorize(ALERT_PAGES)
+    public ApiResponse<List<StoreOption>> stores(Authentication authentication) {
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(), logStoreRepository.findAll(),
+                        LogStore::id).stream()
                 .sorted(Comparator.comparing(LogStore::id))
                 .map(store -> new StoreOption(store.id(), store.code(), store.name()))
                 .toList());
     }
 
     @GetMapping("/users")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(RECIPIENT_PICKERS)
     public ApiResponse<List<UserOption>> users() {
         return ApiResponse.success(notifyService.users().stream()
                 .sorted(Comparator.comparing(UserAccount::id))
@@ -123,40 +138,50 @@ public class AlertCenterController {
     }
 
     @GetMapping("/log-rules")
-    @PreAuthorize(MANAGERS)
-    public ApiResponse<List<LogAlertRuleResponse>> logRules() {
+    @PreAuthorize(ALERT_PAGES)
+    public ApiResponse<List<LogAlertRuleResponse>> logRules(Authentication authentication) {
         Map<Long, LogStore> stores = storeMap();
         Map<Long, RuleNotify> notifies = notifyService.ruleNotifies(NotifyService.RULE_LOG);
-        return ApiResponse.success(logAlertService.rules().stream()
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(), logAlertService.rules(),
+                        LogAlertRule::storeId).stream()
                 .map(rule -> response(rule, stores, notifies.getOrDefault(rule.id(), RuleNotify.none())))
                 .toList());
     }
 
     @PostMapping("/log-rules")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(RULES)
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<LogAlertRuleResponse> createLogRule(@RequestBody LogAlertRuleRequest request,
                                                            Authentication authentication) {
+        storeAccessService.require(authentication.getName(), request.storeId());
         LogAlertRule rule = logAlertService.createRule(request.toRule(), request.notification(), authentication.getName());
         return ApiResponse.success(response(rule, storeMap(),
                 notifyService.ruleNotify(NotifyService.RULE_LOG, rule.id())));
     }
 
     @PutMapping("/log-rules/{id}")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(RULES)
     public ApiResponse<LogAlertRuleResponse> updateLogRule(@PathVariable Long id,
                                                            @RequestBody LogAlertRuleRequest request,
                                                            Authentication authentication) {
+        requireRuleStore(authentication, id);
+        storeAccessService.require(authentication.getName(), request.storeId());
         LogAlertRule rule = logAlertService.updateRule(id, request.toRule(), request.notification(),
                 authentication.getName());
         return ApiResponse.success(response(rule, storeMap(), notifyService.ruleNotify(NotifyService.RULE_LOG, id)));
     }
 
     @DeleteMapping("/log-rules/{id}")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(RULES)
     public ApiResponse<Void> deleteLogRule(@PathVariable Long id, Authentication authentication) {
+        requireRuleStore(authentication, id);
         logAlertService.deleteRule(id, authentication.getName());
         return ApiResponse.success(null);
+    }
+
+    private void requireRuleStore(Authentication authentication, Long ruleId) {
+        logAlertService.rules().stream().filter(rule -> rule.id().equals(ruleId)).findFirst()
+                .ifPresent(rule -> storeAccessService.require(authentication.getName(), rule.storeId()));
     }
 
     private static LogAlertRuleResponse response(LogAlertRule rule, Map<Long, LogStore> stores,
@@ -181,13 +206,15 @@ public class AlertCenterController {
      * @param days   events started within this many days; firing events are always included
      */
     @GetMapping("/log-alerts")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(EVENTS)
     public ApiResponse<List<LogAlertEventResponse>> logAlerts(@RequestParam(required = false) String status,
                                                               @RequestParam(required = false) Long storeId,
                                                               @RequestParam(defaultValue = "7") int days,
-                                                              @RequestParam(defaultValue = "200") int limit) {
+                                                              @RequestParam(defaultValue = "200") int limit,
+                                                              Authentication authentication) {
         Map<Long, LogStore> stores = storeMap();
-        return ApiResponse.success(logAlertService.events(status, storeId, days, limit).stream()
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(),
+                        logAlertService.events(status, storeId, days, limit), LogAlertEvent::storeId).stream()
                 .map((LogAlertEvent event) -> {
                     LogStore store = stores.get(event.storeId());
                     return new LogAlertEventResponse(event.id(), event.ruleId(), event.ruleName(), event.storeId(),
@@ -213,32 +240,32 @@ public class AlertCenterController {
     }
 
     @GetMapping("/notify/channels")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(NOTIFY)
     public ApiResponse<ChannelsResponse> channels() {
         return ApiResponse.success(new ChannelsResponse(notifyService.email(), notifyService.sms()));
     }
 
     @PutMapping("/notify/email")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(NOTIFY)
     public ApiResponse<EmailSettings> saveEmail(@RequestBody EmailSettings settings, Authentication authentication) {
         return ApiResponse.success(notifyService.saveEmail(settings, authentication.getName()));
     }
 
     @PutMapping("/notify/sms")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(NOTIFY)
     public ApiResponse<SmsSettings> saveSms(@RequestBody SmsSettings settings, Authentication authentication) {
         return ApiResponse.success(notifyService.saveSms(settings, authentication.getName()));
     }
 
     @PostMapping("/notify/email/test")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(NOTIFY)
     public ApiResponse<Void> testEmail(@RequestBody EmailTestRequest request) {
         notifyService.testEmail(request.settings(), request.to());
         return ApiResponse.success(null);
     }
 
     @PostMapping("/notify/sms/test")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(NOTIFY)
     public ApiResponse<Void> testSms(@RequestBody SmsTestRequest request) {
         notifyService.testSms(request.settings(), request.phone());
         return ApiResponse.success(null);
@@ -259,13 +286,13 @@ public class AlertCenterController {
     }
 
     @GetMapping("/notify/groups")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(RECIPIENT_PICKERS)
     public ApiResponse<List<GroupResponse>> groups() {
         return ApiResponse.success(notifyService.groups().stream().map(GroupResponse::from).toList());
     }
 
     @PostMapping("/notify/groups")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(NOTIFY)
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<GroupResponse> createGroup(@RequestBody GroupRequest request, Authentication authentication) {
         return ApiResponse.success(GroupResponse.from(notifyService.saveGroup(null, request.name(),
@@ -273,7 +300,7 @@ public class AlertCenterController {
     }
 
     @PutMapping("/notify/groups/{id}")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(NOTIFY)
     public ApiResponse<GroupResponse> updateGroup(@PathVariable Long id, @RequestBody GroupRequest request,
                                                   Authentication authentication) {
         return ApiResponse.success(GroupResponse.from(notifyService.saveGroup(id, request.name(),
@@ -281,7 +308,7 @@ public class AlertCenterController {
     }
 
     @DeleteMapping("/notify/groups/{id}")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(NOTIFY)
     public ApiResponse<Void> deleteGroup(@PathVariable Long id, Authentication authentication) {
         notifyService.deleteGroup(id, authentication.getName());
         return ApiResponse.success(null);
@@ -298,7 +325,7 @@ public class AlertCenterController {
      * @param eventId   one alert's deliveries
      */
     @GetMapping("/notify/records")
-    @PreAuthorize(MANAGERS)
+    @PreAuthorize(RECORD_READERS)
     public ApiResponse<List<RecordResponse>> records(@RequestParam(required = false) String eventType,
                                                      @RequestParam(required = false) Long eventId,
                                                      @RequestParam(defaultValue = "200") int limit) {

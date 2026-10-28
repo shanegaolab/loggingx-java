@@ -1,7 +1,9 @@
 package com.loggingx.web.log;
 
 import com.loggingx.biz.agent.AgentService;
+import com.loggingx.biz.ai.AiDiagnosisService;
 import com.loggingx.biz.backup.BackupService;
+import com.loggingx.biz.permission.StoreAccessService;
 import com.loggingx.biz.backup.BackupService.PolicyView;
 import com.loggingx.biz.log.LogStoreService;
 import com.loggingx.biz.monitor.MonitorService;
@@ -43,10 +45,15 @@ public class LogStoreController {
     private final AgentService agentService;
     private final MonitorService monitorService;
     private final BackupService backupService;
+    private final StoreAccessService storeAccessService;
+    private final AiDiagnosisService aiDiagnosisService;
 
     public LogStoreController(LogStoreService logStoreService, AgentService agentService,
-                              MonitorService monitorService, BackupService backupService) {
+                              MonitorService monitorService, BackupService backupService,
+                              StoreAccessService storeAccessService, AiDiagnosisService aiDiagnosisService) {
         this.backupService = backupService;
+        this.storeAccessService = storeAccessService;
+        this.aiDiagnosisService = aiDiagnosisService;
         this.logStoreService = logStoreService;
         this.agentService = agentService;
         this.monitorService = monitorService;
@@ -57,7 +64,7 @@ public class LogStoreController {
      */
     @GetMapping("/list")
     @PreAuthorize("@permissionService.hasAnyMenu(authentication, 'LogStore', 'LogAgent')")
-    public ApiResponse<List<LogStoreResponse>> list() {
+    public ApiResponse<List<LogStoreResponse>> list(Authentication authentication) {
         Map<Long, AgentCount> agents = agentService.counts();
         Map<Long, LogStoreResponse.Backup> backups = new HashMap<>();
         for (PolicyView policy : backupService.policies()) {
@@ -66,7 +73,8 @@ public class LogStoreController {
             backups.put(storeId, LogStoreResponse.Backup.from(policy,
                     enabled ? backupService.pendingDays(storeId) : 0));
         }
-        return ApiResponse.success(logStoreService.list().stream()
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(), logStoreService.list(),
+                        view -> view.store().id()).stream()
                 .map(view -> LogStoreResponse.from(view, agents.get(view.store().id()),
                         backups.get(view.store().id())))
                 .toList());
@@ -77,14 +85,16 @@ public class LogStoreController {
      */
     @GetMapping("/options")
     @PreAuthorize("@permissionService.hasAnyMenu(authentication, 'LogStore', 'LogQuery', 'LogTail')")
-    public ApiResponse<List<LogStoreOption>> options() {
-        return ApiResponse.success(logStoreService.all().stream().map(LogStoreOption::from).toList());
+    public ApiResponse<List<LogStoreOption>> options(Authentication authentication) {
+        return ApiResponse.success(storeAccessService.filter(authentication.getName(), logStoreService.all(),
+                LogStore::id).stream().map(LogStoreOption::from).toList());
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<LogStoreResponse> create(@Valid @RequestBody LogStoreRequest request,
                                                 Authentication authentication) {
+        storeAccessService.requireAllStores(authentication.getName());
         LogStoreRequest.Backup backup = request.backup();
         boolean archive = backup != null && Boolean.TRUE.equals(backup.enabled());
         if (archive) {
@@ -102,6 +112,7 @@ public class LogStoreController {
     @PutMapping("/{id}")
     public ApiResponse<LogStoreResponse> update(@PathVariable Long id, @Valid @RequestBody LogStoreRequest request,
                                                 Authentication authentication) {
+        storeAccessService.require(authentication.getName(), id);
         LogStoreRequest.Backup backup = request.backup();
         boolean saveBackup = backup != null && backup.archiveAfterDays() != null;
         if (saveBackup) {
@@ -124,6 +135,7 @@ public class LogStoreController {
      */
     @PostMapping("/{id}/token")
     public ApiResponse<LogStoreResponse> regenerateToken(@PathVariable Long id, Authentication authentication) {
+        storeAccessService.require(authentication.getName(), id);
         return ApiResponse.success(LogStoreResponse.from(
                 logStoreService.regenerateToken(id, authentication.getName())));
     }
@@ -135,11 +147,13 @@ public class LogStoreController {
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable Long id, @RequestParam(defaultValue = "false") boolean deleteArchives,
                                     Authentication authentication) {
+        storeAccessService.requireAllStores(authentication.getName());
         logStoreService.delete(id, authentication.getName());
         if (deleteArchives) {
             backupService.deleteStoreArchives(id, authentication.getName());
         }
         monitorService.deleteStore(id);
+        aiDiagnosisService.deleteStore(id);
         return ApiResponse.success(null);
     }
 

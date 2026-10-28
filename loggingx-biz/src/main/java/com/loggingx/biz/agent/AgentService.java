@@ -183,6 +183,13 @@ public class AgentService {
     }
 
     /**
+     * @return the agent, if it is registered
+     */
+    public Optional<LogAgent> find(Long id) {
+        return agentRepository.findById(id);
+    }
+
+    /**
      * Forgets an agent. It registers again on its next sync only if it presents a valid ingest token.
      */
     public void remove(Long id, String operatorUsername) {

@@ -45,21 +45,48 @@ public class SystemDataInitializer implements ApplicationRunner {
     private static final String LOG_QUERY_MENU = "LogQuery";
     private static final String LOG_TAIL_MENU = "LogTail";
     private static final String LOG_AGENT_MENU = "LogAgent";
-    private static final String LOG_BACKUP_MENU = "LogBackup";
     private static final String MONITOR_MENU = "Monitor";
     private static final String HOST_MONITOR_MENU = "HostMonitor";
-    /** The alert center; named after its first version, which only had host alerts. */
-    private static final String HOST_ALERT_MENU = "HostAlert";
-    private static final String ALERT_CENTER_PATH = "/alert";
-    private static final String ALERT_CENTER_COMPONENT = "/alert/index";
-    private static final String ALERT_CENTER_TITLE = "menus.alert.title";
-    private static final String ALERT_CENTER_ICON = "ri:alarm-warning-line";
-    private static final int ALERT_CENTER_SORT = 4;
-    private static final String BACKUP_PATH = "/backup";
-    private static final String BACKUP_COMPONENT = "/backup/index";
-    private static final String BACKUP_TITLE = "menus.backup.title";
-    private static final String BACKUP_ICON = "ri:archive-drawer-line";
-    private static final int BACKUP_SORT = 5;
+
+    /**
+     * A page of a directory that earlier versions had as a single page. The first page listed keeps the name of that
+     * single page, so its id, its grants and the permission checks naming it carry over.
+     */
+    private record DirectoryPage(String name, String path, String component, String title, int sort) {
+    }
+
+    /** A top-level directory with its pages; see {@link #addMissingDirectory(SplitDirectory)}. */
+    private record SplitDirectory(String name, String path, String title, String icon, int sort,
+                                  List<DirectoryPage> pages) {
+    }
+
+    /**
+     * The alert center: events, rules and notification settings. The rules page is named after the single alert page
+     * of earlier versions (which only had host alerts at first, in the monitoring directory).
+     */
+    private static final SplitDirectory ALERT_CENTER = new SplitDirectory("AlertCenter", "/alert",
+            "menus.alert.title", "ri:alarm-warning-line", 4, List.of(
+            new DirectoryPage("HostAlert", "rules", "/alert/rules", "menus.alert.rules", 2),
+            new DirectoryPage("AlertEvent", "events", "/alert/events", "menus.alert.events", 1),
+            new DirectoryPage("AlertNotify", "notify", "/alert/notify", "menus.alert.notify", 3)));
+
+    /** AI ops, next to the alert center. The diagnosis page is named after the single AI page of earlier versions. */
+    private static final SplitDirectory AI_OPS = new SplitDirectory("AiOps", "/ai", "menus.ai.title",
+            "ri:robot-2-line", 4, List.of(
+            new DirectoryPage("AiDiagnosis", "diagnosis", "/ai/diagnosis", "menus.ai.diagnosis", 2),
+            new DirectoryPage("AiChat", "chat", "/ai/chat", "menus.ai.chat", 1),
+            new DirectoryPage("AiErrorGroup", "error-groups", "/ai/error-group", "menus.ai.errorGroup", 3),
+            new DirectoryPage("AiKnowledge", "knowledge", "/ai/knowledge", "menus.ai.knowledge", 4),
+            new DirectoryPage("AiSettings", "settings", "/ai/settings", "menus.ai.settings", 5)));
+
+    /**
+     * Backups: the archive policies (storage, schedule, per store) and the archives. The policies page is named after
+     * the single backup page of earlier versions (first in the log directory, then at the top level).
+     */
+    private static final SplitDirectory BACKUP = new SplitDirectory("Backup", "/backup", "menus.backup.title",
+            "ri:archive-drawer-line", 5, List.of(
+            new DirectoryPage("LogBackup", "policies", "/backup/policies", "menus.backup.policies", 1),
+            new DirectoryPage("BackupArchive", "archives", "/backup/archives", "menus.backup.archives", 2)));
 
     private final MenuRepository menuRepository;
     private final RoleRepository roleRepository;
@@ -77,6 +104,9 @@ public class SystemDataInitializer implements ApplicationRunner {
             addMissingSystemPages();
             addMissingLogPages();
             addMissingMonitorPages();
+            addMissingDirectory(ALERT_CENTER);
+            addMissingDirectory(BACKUP);
+            addMissingDirectory(AI_OPS);
         }
     }
 
@@ -94,8 +124,9 @@ public class SystemDataInitializer implements ApplicationRunner {
 
         Long monitor = monitorDirectory();
         Long hostMonitor = hostMonitorPage(monitor);
-        Long hostAlert = alertCenterPage();
-        Long logBackup = backupPage();
+        Set<Long> alertPages = seedDirectory(ALERT_CENTER);
+        Set<Long> backupPages = seedDirectory(BACKUP);
+        Set<Long> aiPages = seedDirectory(AI_OPS);
 
         Long system = directory(SYSTEM_MENU, "/system", "menus.system.title", "ri:user-3-line", 6);
         Long user = page(system, "User", "user", "/system/user", "menus.system.user", 1,
@@ -121,7 +152,10 @@ public class SystemDataInitializer implements ApplicationRunner {
 
         Set<Long> exceptionMenus = Set.of(exception, forbidden, notFound, serverError);
         Set<Long> adminMenus = new HashSet<>(Set.of(dashboard, console, system, user, userCenter, dept, post,
-                logs, logStore, logQuery, logTail, logAgent, logBackup, monitor, hostMonitor, hostAlert));
+                logs, logStore, logQuery, logTail, logAgent, monitor, hostMonitor));
+        adminMenus.addAll(alertPages);
+        adminMenus.addAll(backupPages);
+        adminMenus.addAll(aiPages);
         adminMenus.addAll(exceptionMenus);
         Set<Long> userMenus = new HashSet<>(Set.of(dashboard, console, logs, logQuery, logTail, monitor,
                 hostMonitor));
@@ -190,13 +224,6 @@ public class SystemDataInitializer implements ApplicationRunner {
             logAgentPage(logs);
             log.info("Added the {} menu", LOG_AGENT_MENU);
         }
-        Optional<Menu> backup = menus.stream().filter(menu -> LOG_BACKUP_MENU.equals(menu.name())).findFirst();
-        if (backup.isEmpty()) {
-            backupPage();
-            log.info("Added the {} menu", LOG_BACKUP_MENU);
-        } else if (backup.get().parentId() != Menu.ROOT_PARENT_ID) {
-            moveToTopLevel(backup.get(), BACKUP_PATH, BACKUP_COMPONENT, BACKUP_TITLE, BACKUP_ICON, BACKUP_SORT);
-        }
     }
 
     /**
@@ -218,28 +245,62 @@ public class SystemDataInitializer implements ApplicationRunner {
             hostMonitorPage(monitor);
             log.info("Added the {} menu", HOST_MONITOR_MENU);
         }
-        Optional<Menu> alertCenter = menus.stream().filter(menu -> HOST_ALERT_MENU.equals(menu.name())).findFirst();
-        if (alertCenter.isEmpty()) {
-            alertCenterPage();
-            log.info("Added the {} menu", HOST_ALERT_MENU);
-        } else if (alertCenter.get().parentId() != Menu.ROOT_PARENT_ID) {
-            moveToTopLevel(alertCenter.get(), ALERT_CENTER_PATH, ALERT_CENTER_COMPONENT, ALERT_CENTER_TITLE,
-                    ALERT_CENTER_ICON, ALERT_CENTER_SORT);
-        }
+    }
+
+    /** Creates a directory and its pages for a new database; returns their ids. */
+    private Set<Long> seedDirectory(SplitDirectory spec) {
+        Long directory = directory(spec.name(), spec.path(), spec.title(), spec.icon(), spec.sort());
+        Set<Long> ids = new HashSet<>(Set.of(directory));
+        spec.pages().forEach(page -> ids.add(page(directory, page)));
+        return ids;
     }
 
     /**
-     * Turns a page seeded below a directory by a previous version into a top-level menu (the alert center started in
-     * the monitoring directory, backups in the log directory). The menu keeps its id and name, so roles granted it
-     * and permission checks are unaffected.
+     * Adds a directory and its pages to a database seeded before they existed. Earlier versions had the directory's
+     * first page as a single page (at the top level or in another directory): it is moved into the directory, keeping
+     * its id, and the roles that had it are granted the directory and the pages that took over its tabs. Pages added
+     * without such a predecessor are only seen by the super administrator until granted, like
+     * {@link #addMissingSystemPages()}.
      */
-    private void moveToTopLevel(Menu page, String path, String component, String title, String icon, int sort) {
-        Menu moved = new Menu(page.id(), Menu.ROOT_PARENT_ID, page.type(), page.name(), path, component, title, icon,
-                sort, page.enabled(), page.keepAlive(), page.hidden(), page.hideTab(), page.link(), page.iframe(),
-                page.showBadge(), page.textBadge(), page.fixedTab(), page.activePath(), page.fullPage(),
-                page.authMark(), Instant.now());
-        menuRepository.update(page, moved);
-        log.info("Moved the {} menu to the top level", page.name());
+    private void addMissingDirectory(SplitDirectory spec) {
+        List<Menu> menus = menuRepository.findAll().stream().filter(menu -> !menu.isButton()).toList();
+        Set<String> names = menus.stream().map(Menu::name).collect(Collectors.toSet());
+        Set<Long> added = new HashSet<>();
+        Long directory = menus.stream().filter(menu -> spec.name().equals(menu.name())).map(Menu::id).findFirst()
+                .orElseGet(() -> {
+                    Long id = directory(spec.name(), spec.path(), spec.title(), spec.icon(), spec.sort());
+                    added.add(id);
+                    log.info("Added the {} menu", spec.name());
+                    return id;
+                });
+        DirectoryPage first = spec.pages().getFirst();
+        Optional<Menu> legacy = menus.stream().filter(menu -> first.name().equals(menu.name())).findFirst();
+        if (legacy.isPresent() && !directory.equals(legacy.get().parentId())) {
+            Menu page = legacy.get();
+            menuRepository.update(page, new Menu(page.id(), directory, page.type(), page.name(), first.path(),
+                    first.component(), first.title(), null, first.sort(), page.enabled(), true, page.hidden(),
+                    page.hideTab(), page.link(), page.iframe(), page.showBadge(), page.textBadge(), page.fixedTab(),
+                    page.activePath(), page.fullPage(), page.authMark(), Instant.now()));
+            log.info("Moved the {} menu into the {} directory", first.name(), spec.name());
+        }
+        for (DirectoryPage page : spec.pages()) {
+            if (!names.contains(page.name())) {
+                added.add(page(directory, page));
+                log.info("Added the {} menu", page.name());
+            }
+        }
+        if (legacy.isPresent() && !added.isEmpty()) {
+            Long legacyId = legacy.get().id();
+            Instant now = Instant.now();
+            roleRepository.findAll().stream()
+                    .filter(role -> role.menuIds().contains(legacyId))
+                    .forEach(role -> roleRepository.modify(role.id(), current -> {
+                        Set<Long> ids = new HashSet<>(current.menuIds());
+                        ids.add(directory);
+                        ids.addAll(added);
+                        return current.withMenuIds(ids, now);
+                    }));
+        }
     }
 
     private Long monitorDirectory() {
@@ -249,13 +310,6 @@ public class SystemDataInitializer implements ApplicationRunner {
     private Long hostMonitorPage(Long monitor) {
         return page(monitor, HOST_MONITOR_MENU, "host", "/monitor/host", "menus.monitor.host", 1, true, false, false,
                 false);
-    }
-
-    /** A top-level page (no directory): log and host alerts and their notifications. */
-    private Long alertCenterPage() {
-        return insert(new Menu(null, Menu.ROOT_PARENT_ID, MenuType.MENU, HOST_ALERT_MENU, ALERT_CENTER_PATH,
-                ALERT_CENTER_COMPONENT, ALERT_CENTER_TITLE, ALERT_CENTER_ICON, ALERT_CENTER_SORT, true, true, false,
-                false, null, false, false, null, false, null, false, null, Instant.now()));
     }
 
     private Long logDirectory() {
@@ -279,13 +333,6 @@ public class SystemDataInitializer implements ApplicationRunner {
         return page(logs, LOG_AGENT_MENU, "agent", "/log/agent", "menus.log.agent", 4, true, false, false, false);
     }
 
-    /** A top-level page (no directory): archives of the log stores in object storage. */
-    private Long backupPage() {
-        return insert(new Menu(null, Menu.ROOT_PARENT_ID, MenuType.MENU, LOG_BACKUP_MENU, BACKUP_PATH,
-                BACKUP_COMPONENT, BACKUP_TITLE, BACKUP_ICON, BACKUP_SORT, true, true, false, false, null, false,
-                false, null, false, null, false, null, Instant.now()));
-    }
-
     private Long deptPage(Long system) {
         return page(system, DEPT_MENU, "dept", "/system/dept", "menus.system.dept", 5, true, false, false, false);
     }
@@ -298,6 +345,11 @@ public class SystemDataInitializer implements ApplicationRunner {
         return insert(new Menu(null, Menu.ROOT_PARENT_ID, MenuType.MENU, name, path, MenuService.LAYOUT_COMPONENT,
                 title, icon, sort, true, false, false, false, null, false, false, null, false, null, false, null,
                 Instant.now()));
+    }
+
+    private Long page(Long parentId, DirectoryPage page) {
+        return page(parentId, page.name(), page.path(), page.component(), page.title(), page.sort(), true, false,
+                false, false);
     }
 
     private Long page(Long parentId, String name, String path, String component, String title, int sort,
