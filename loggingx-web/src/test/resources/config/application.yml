@@ -9,6 +9,9 @@ spring:
       maximum-pool-size: 2
 # Log lines are kept in memory instead of ClickHouse, and the live view polls quickly without a settle delay.
 loggingx:
+  security:
+    jwt:
+      secret: test-only-jwt-secret-not-used-anywhere-else-0123456789
   log:
     storage: memory
     tail:

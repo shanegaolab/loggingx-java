@@ -101,7 +101,8 @@ loggingx:
   security:
     jwt:
       # Required: at least 32 bytes. Startup fails if it is not set; the dev profile provides a local value.
-      secret: ${LOGGINGX_JWT_SECRET:local-development-jwt-secret-change-before-production-0123456789}
+      # No default here: a value committed to the repository would let anyone sign tokens.
+      secret: ${LOGGINGX_JWT_SECRET:}
       expiration: 8h
   bootstrap:
     # When no account holds the super administrator role, one is created with these credentials at startup.
